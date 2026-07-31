@@ -36,6 +36,26 @@ _SECRET_FIELD_MARKERS = {
     "refreshtoken",
     "secret",
 }
+_SAFE_TOKEN_FIELD_NAMES = {
+    "cachedinputtokens",
+    "cachedtokens",
+    "completiontokens",
+    "contextwindowtokens",
+    "inputtokens",
+    "maxinputtokens",
+    "maxoutputtokens",
+    "maxtokens",
+    "outputtokens",
+    "promptcachehittokens",
+    "promptcachemisstokens",
+    "prompttokens",
+    "protectedtokencount",
+    "tokencount",
+    "tokenizer",
+    "tokenizerversion",
+    "totaltokens",
+    "uncachedinputtokens",
+}
 _SECRET_VALUE_PATTERNS = (
     re.compile(r"Bearer\s+\S{8,}", re.IGNORECASE),
     re.compile(r"sk-[a-z0-9_-]{8,}", re.IGNORECASE),
@@ -80,7 +100,13 @@ def _reject_secret_bearing_fields(value: Any) -> None:
     if isinstance(value, dict):
         for field_name, nested in value.items():
             normalized = re.sub(r"[^a-z0-9]", "", field_name.lower())
-            if any(marker in normalized for marker in _SECRET_FIELD_MARKERS):
+            has_secret_marker = any(
+                marker in normalized for marker in _SECRET_FIELD_MARKERS
+            )
+            has_disallowed_token = (
+                "token" in normalized and normalized not in _SAFE_TOKEN_FIELD_NAMES
+            )
+            if has_secret_marker or has_disallowed_token:
                 raise ValueError(
                     "Provider cache_identity contains a secret-bearing field name"
                 )

@@ -134,6 +134,34 @@ def test_job_rejects_camel_case_secret_fields_without_persisting_them(
 
 
 @pytest.mark.parametrize(
+    "token_field",
+    ["token", "sessionToken", "identity_token", "idToken"],
+)
+def test_job_rejects_token_credential_fields_but_not_accounting_fields(
+    tmp_path: Path,
+    token_field: str,
+) -> None:
+    sentinel = "sentinel-secret-value"
+    provider = DeterministicProvider()
+    provider.cache_identity = {
+        "provider": provider.name,
+        "nested": [{token_field: sentinel}],
+    }
+    output_dir = tmp_path / "output"
+
+    with pytest.raises(ValueError) as exc_info:
+        run_translation_job(tmp_path / "missing.pdf", output_dir, provider)
+
+    assert str(exc_info.value) == (
+        "Provider cache_identity contains a secret-bearing field name"
+    )
+    assert token_field not in str(exc_info.value)
+    assert sentinel not in str(exc_info.value)
+    assert not (output_dir / "provider-run.json").exists()
+    assert not (output_dir / "translation-report.json").exists()
+
+
+@pytest.mark.parametrize(
     "secret_value",
     [
         "Bearer sentinel-secret-value",
