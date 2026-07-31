@@ -110,6 +110,17 @@ class ProtectedTokenError(RuntimeError):
         )
 
 
+def placeholder_issues(
+    text: str,
+    expected: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    counts = {placeholder: text.count(placeholder) for placeholder in expected}
+    missing = tuple(placeholder for placeholder, count in counts.items() if count == 0)
+    duplicated = tuple(placeholder for placeholder, count in counts.items() if count > 1)
+    unknown = tuple(sorted(set(_PLACEHOLDER.findall(text)) - set(expected)))
+    return missing, duplicated, unknown
+
+
 def protect_text(segment_id: str, text: str) -> ProtectedSegment:
     candidates: list[tuple[int, int, int, str]] = []
     for priority, (kind, pattern) in enumerate(_PATTERNS):
@@ -167,9 +178,7 @@ def restore_text(
 ) -> tuple[str, ProtectionValidation]:
     expected = {token.placeholder: token for token in segment.tokens}
     counts = {placeholder: text.count(placeholder) for placeholder in expected}
-    missing = tuple(placeholder for placeholder, count in counts.items() if count == 0)
-    duplicated = tuple(placeholder for placeholder, count in counts.items() if count > 1)
-    unknown = tuple(sorted(set(_PLACEHOLDER.findall(text)) - set(expected)))
+    missing, duplicated, unknown = placeholder_issues(text, tuple(expected))
     restored = text
     for placeholder, token in expected.items():
         restored = restored.replace(placeholder, token.value)

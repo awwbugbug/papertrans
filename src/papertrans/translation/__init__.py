@@ -4,6 +4,7 @@ from papertrans.translation.base import (
     TranslationResult,
     TranslationUsage,
 )
+from papertrans.translation.compatible_client import ChatCompletionsTranslationProvider
 from papertrans.translation.mock import MockTranslationProvider
 from papertrans.translation.pipeline import (
     ProtectedTranslationBatch,
@@ -16,6 +17,7 @@ from papertrans.translation.protection import (
     ProtectedToken,
     ProtectedTokenError,
     ProtectionValidation,
+    placeholder_issues,
     protect_text,
     restore_text,
 )
@@ -30,6 +32,7 @@ from papertrans.translation.reliability import (
 )
 
 __all__ = [
+    "ChatCompletionsTranslationProvider",
     "MockTranslationProvider",
     "NonRetryableProviderError",
     "ProviderError",
@@ -47,6 +50,7 @@ __all__ = [
     "TranslationRequest",
     "TranslationResult",
     "TranslationUsage",
+    "placeholder_issues",
     "protect_text_flows",
     "translate_text_flows",
     "translate_text_flows_with_protection",

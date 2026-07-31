@@ -5,10 +5,22 @@ from papertrans.translation import (
     ProtectedTokenError,
     TranslationRequest,
     TranslationResult,
+    placeholder_issues,
     protect_text,
     restore_text,
     translate_text_flows_with_protection,
 )
+
+
+def test_placeholder_issues_reports_missing_duplicated_and_unknown_tokens() -> None:
+    expected = ("⟦PT0001⟧", "⟦PT0002⟧", "⟦PT0003⟧")
+
+    issues = placeholder_issues(
+        "译文⟦PT0001⟧⟦PT0001⟧⟦PT0003⟧⟦PT9999⟧",
+        expected,
+    )
+
+    assert issues == (("⟦PT0002⟧",), ("⟦PT0001⟧",), ("⟦PT9999⟧",))
 
 
 def test_protect_and_restore_academic_tokens_exactly() -> None:
