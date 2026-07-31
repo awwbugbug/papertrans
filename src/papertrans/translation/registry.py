@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import unicodedata
 from collections.abc import Mapping
 from urllib.parse import urlsplit
@@ -20,6 +21,8 @@ from papertrans.translation.profiles import (
 
 PROVIDER_NAMES = ("mock", "deepseek", "kimi", "compatible")
 _COMPATIBLE_API_KEY_ENV = "PAPERTRANS_COMPATIBLE_API_KEY"
+_BRACKETED_AUTHORITY = re.compile(r"^\[[^\[\]]+\](?::\d+)?$")
+_UNBRACKETED_AUTHORITY = re.compile(r"^[^:\[\]]+(?::\d+)?$")
 
 
 def create_translation_provider(
@@ -120,6 +123,8 @@ def _is_absolute_http_url(value: str) -> bool:
         return False
     try:
         parsed = urlsplit(value)
+        if not _has_valid_authority(parsed.netloc):
+            return False
         hostname = parsed.hostname
         _port = parsed.port
     except ValueError:
@@ -132,3 +137,9 @@ def _is_absolute_http_url(value: str) -> bool:
         and not parsed.query
         and not parsed.fragment
     )
+
+
+def _has_valid_authority(authority: str) -> bool:
+    if authority.startswith("["):
+        return _BRACKETED_AUTHORITY.fullmatch(authority) is not None
+    return _UNBRACKETED_AUTHORITY.fullmatch(authority) is not None

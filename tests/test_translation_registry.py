@@ -110,6 +110,7 @@ def test_compatible_rejects_invalid_authority_port() -> None:
         "https://example.test :443/v1",
         "https://example.test/v1\ncontrol-sentinel",
         "https://[2001:db8::1/v1",
+        "https://[2001:db8::1]secret-suffix/v1",
     ],
 )
 def test_compatible_rejects_malformed_authorities_without_echoing_input(
