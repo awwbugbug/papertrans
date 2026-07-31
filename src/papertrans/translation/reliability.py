@@ -17,7 +17,7 @@ from papertrans.translation.base import (
     TranslationUsage,
 )
 
-_SAFE_ERROR_TYPE = re.compile(r"[a-z][a-z0-9_]{0,63}\\Z")
+_SAFE_ERROR_TYPE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 
 
 def _normalize_error_type(error_type: object) -> str:
@@ -131,7 +131,7 @@ class ProviderError(RuntimeError):
         self.error_type = _normalize_error_type(error_type)
         self.http_status = http_status
         self.usage = usage
-        super().__init__(error_type)
+        super().__init__(self.error_type)
 
 
 class RetryableProviderError(ProviderError):

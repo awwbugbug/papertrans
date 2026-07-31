@@ -14,6 +14,23 @@ from papertrans.translation import (
 )
 
 
+def test_provider_error_preserves_safe_identifier_category() -> None:
+    error = NonRetryableProviderError(error_type="provider_http_error", http_status=400)
+
+    assert error.error_type == "provider_http_error"
+    assert str(error) == "provider_http_error"
+
+
+def test_provider_error_sanitizes_unsafe_constructor_text() -> None:
+    unsafe = "authentication_failed:sk-sensitive"
+
+    error = NonRetryableProviderError(error_type=unsafe, http_status=401)
+
+    assert error.error_type == "provider_error"
+    assert str(error) == "provider_error"
+    assert unsafe not in str(error)
+
+
 class _CountingProvider:
     name = "counting"
 
