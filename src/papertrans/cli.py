@@ -6,8 +6,9 @@ from pathlib import Path
 
 from papertrans import __version__
 from papertrans.inspect import inspect_pdf
-from papertrans.mock_translation import run_mock_translation
 from papertrans.roundtrip import run_roundtrip
+from papertrans.translation import PROVIDER_NAMES, create_translation_provider
+from papertrans.translation_job import run_translation_job
 
 
 def _default_output(source: Path, operation: str) -> Path:
@@ -51,9 +52,30 @@ def build_parser() -> argparse.ArgumentParser:
     translate_parser.add_argument("input", type=Path, help="Source PDF")
     translate_parser.add_argument(
         "--provider",
-        choices=("mock",),
+        choices=PROVIDER_NAMES,
         default="mock",
-        help="Translation provider; M4.2 currently supports reliable protected mock translation",
+        help="Translation provider",
+    )
+    translate_parser.add_argument("--model", help="Provider model override")
+    translate_parser.add_argument(
+        "--base-url",
+        help="OpenAI-compatible API base URL; only valid with compatible",
+    )
+    translate_parser.add_argument(
+        "--api-key-env",
+        help="Environment variable containing the compatible API key",
+    )
+    translate_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=60.0,
+        help="Provider request timeout in seconds",
+    )
+    translate_parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=2048,
+        help="Maximum provider output tokens per request",
     )
     translate_parser.add_argument(
         "--length-factor",
@@ -116,12 +138,23 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(f"Quality gate:       {status}")
     elif args.command == "translate":
         source = args.input.expanduser().resolve()
-        output = args.output_dir or _default_output(source, "mock-translation")
+        output = args.output_dir or _default_output(
+            source, f"{args.provider}-translation"
+        )
         try:
-            result = run_mock_translation(
+            provider = create_translation_provider(
+                args.provider,
+                model=args.model,
+                base_url=args.base_url,
+                api_key_env=args.api_key_env,
+                length_factor=args.length_factor,
+                timeout_seconds=args.timeout,
+                max_output_tokens=args.max_output_tokens,
+            )
+            result = run_translation_job(
                 source,
                 output,
-                length_factor=args.length_factor,
+                provider,
                 cache_dir=args.cache_dir,
                 max_attempts=args.max_attempts,
                 requests_per_second=args.requests_per_second,
@@ -129,7 +162,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             parser.error(str(exc))
         status = "PASS" if result.report["passed"] else "REVIEW"
-        print(f"Mock translation:   {result.output_dir}")
+        print(f"Translation complete: {result.output_dir}")
+        print(f"Provider:             {args.provider}")
         print(f"Output PDF:         {result.output_pdf}")
         print(f"Protected segments: {result.protected_segments_json}")
         print(f"Provider run:       {result.provider_run_json}")
