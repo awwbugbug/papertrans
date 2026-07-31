@@ -247,9 +247,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             parser.error("Translation provider cleanup failed")
         assert result is not None
         status = "PASS" if result.report["passed"] else "REVIEW"
-        print(f"Translation complete: {result.output_dir}")
+        outcome = "Translation complete" if result.report["passed"] else "Translation needs review"
+        print(f"{outcome}: {result.output_dir}")
         print(f"Provider:             {args.provider}")
-        print(f"Output PDF:         {result.output_pdf}")
+        if result.report["passed"]:
+            print(f"Output PDF:         {result.output_pdf}")
+        else:
+            print("Output PDF:         not created or replaced")
+            reasons = ", ".join(result.report.get("review_reasons", []))
+            if reasons:
+                print(f"Review reasons:     {reasons}")
         print(f"Protected segments: {result.protected_segments_json}")
         print(f"Provider run:       {result.provider_run_json}")
         print(f"Translations:       {result.translations_json}")

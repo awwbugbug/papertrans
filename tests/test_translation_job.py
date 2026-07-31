@@ -87,6 +87,51 @@ def test_generic_job_writes_provider_neutral_artifacts_and_resumes(tmp_path: Pat
     assert second.report["provider_execution"]["usage"]["input_tokens"] == 0
 
 
+def test_unsafe_layout_enters_review_without_replacing_existing_pdf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OverflowProvider(DeterministicProvider):
+        name = "overflow"
+        cache_identity = {"provider": "overflow", "version": "v1"}
+
+        def translate(self, requests: list[TranslationRequest]) -> list[TranslationResult]:
+            request = requests[0]
+            suffix = "".join(request.protected_tokens)
+            long_translation = f"{'很长的模拟译文' * 1000}{suffix}"
+            return [
+                TranslationResult(
+                    segment_id=request.segment_id,
+                    normal=long_translation,
+                    compact=long_translation,
+                    provider=self.name,
+                )
+            ]
+
+    source = tmp_path / "fixture.pdf"
+    output_dir = tmp_path / "review"
+    output_dir.mkdir()
+    existing_output = output_dir / "output.pdf"
+    existing_output.write_bytes(b"existing-safe-output")
+    _create_fixture(source)
+    monkeypatch.setattr(
+        "papertrans.translation_job.render_translated_layout",
+        lambda *args, **kwargs: pytest.fail("unsafe layout reached the renderer"),
+    )
+
+    result = run_translation_job(source, output_dir, OverflowProvider())
+
+    assert result.report["status"] == "review"
+    assert result.report["passed"] is False
+    assert result.report["output_replaced"] is False
+    assert result.report["layout_safety"]["violations"] == ["overflow"]
+    assert result.report["render"] == {
+        "skipped": True,
+        "reason": "layout_safety_review",
+    }
+    assert existing_output.read_bytes() == b"existing-safe-output"
+
+
 @pytest.mark.parametrize(
     "secret_field",
     ["api_key", "Authorization", "client_secret", "credentials"],

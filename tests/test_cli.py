@@ -334,6 +334,44 @@ def test_zero_requests_per_second_remains_valid(
     assert "Quality gate:       PASS" in capsys.readouterr().out
 
 
+def test_main_reports_review_without_claiming_output_pdf(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "output"
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        return SimpleNamespace(
+            output_dir=output,
+            output_pdf=output / "output.pdf",
+            protected_segments_json=output / "protected-segments.json",
+            provider_run_json=output / "provider-run.json",
+            translations_json=output / "translations.json",
+            layout_json=output / "layout.json",
+            report_json=output / "translation-report.json",
+            report={
+                "passed": False,
+                "output_replaced": False,
+                "review_reasons": ["overflow"],
+            },
+        )
+
+    monkeypatch.setattr(
+        "papertrans.cli.create_translation_provider",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr("papertrans.cli.run_translation_job", fake_run)
+
+    main(["translate", "paper.pdf", "--output-dir", str(output)])
+
+    stdout = capsys.readouterr().out
+    assert "Translation needs review" in stdout
+    assert "Output PDF:         not created or replaced" in stdout
+    assert "Review reasons:     overflow" in stdout
+    assert "Quality gate:       REVIEW" in stdout
+
+
 def test_main_dispatches_selected_provider_to_generic_job(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

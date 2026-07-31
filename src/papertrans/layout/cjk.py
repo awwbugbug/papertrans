@@ -5,16 +5,27 @@ from statistics import median
 
 from papertrans.domain import Document, Region, RegionType, TextFlow
 from papertrans.layout.cjk_font import CJKFontResolver, ResolvedCJKFont
+from papertrans.layout.constraints import (
+    COLLISION_CLEARANCE as _COLLISION_CLEARANCE,
+)
+from papertrans.layout.constraints import (
+    Box,
+    protected_boxes_by_page,
+)
+from papertrans.layout.constraints import (
+    boxes_overlap as _boxes_overlap,
+)
+from papertrans.layout.constraints import (
+    line_slot_box as _line_slot_box,
+)
+from papertrans.layout.constraints import (
+    placement_box as _placement_box,
+)
 from papertrans.layout.models import DocumentLayout, FlowLayout, LinePlacement
 from papertrans.translation import TranslationResult
 
 _CANNOT_START = set("，。！？；：、）》】」』％）］｝…")
 _CANNOT_END = set("（《【「『（［｛")
-_LINE_TOP_FACTOR = 0.95
-_LINE_BOTTOM_FACTOR = 0.15
-_COLLISION_CLEARANCE = 0.25
-
-Box = tuple[float, float, float, float]
 
 
 def _flow_font_size(flow: TextFlow, regions: list[Region]) -> float:
@@ -53,36 +64,8 @@ def _take_line(text: str, width: float, font: ResolvedCJKFont, font_size: float)
     return current.rstrip(), text[index + 1 :]
 
 
-def _boxes_overlap(left: Box, right: Box, clearance: float = 0.0) -> bool:
-    return (
-        min(left[2], right[2] + clearance) > max(left[0], right[0] - clearance)
-        and min(left[3], right[3] + clearance) > max(left[1], right[1] - clearance)
-    )
-
-
-def _line_slot_box(region: Region, baseline: float, font_size: float) -> Box:
-    return (
-        region.bbox.x0,
-        baseline - font_size * _LINE_TOP_FACTOR,
-        region.bbox.x1,
-        baseline + font_size * _LINE_BOTTOM_FACTOR,
-    )
-
-
-def _placement_box(placement: LinePlacement, region_by_id: dict[str, Region]) -> Box:
-    region = region_by_id[placement.region_id]
-    return _line_slot_box(region, placement.baseline_y, placement.font_size)
-
-
 def _initial_occupancy(document: Document) -> dict[int, list[Box]]:
-    return {
-        page.number: [
-            (region.bbox.x0, region.bbox.y0, region.bbox.x1, region.bbox.y1)
-            for region in page.regions
-            if not region.translatable
-        ]
-        for page in document.pages
-    }
+    return protected_boxes_by_page(document)
 
 
 def _layout_attempt(

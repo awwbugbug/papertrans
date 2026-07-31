@@ -19,8 +19,8 @@ feature.
 
 ## Current milestone
 
-M4.3 is complete: named and best-effort OpenAI-compatible providers are integrated on top of the
-provider-neutral protection and reliability layers.
+M5.1 is complete: deterministic bounded layout repair is protected by an independent fail-closed
+layout validation pass.
 
 - Native extraction, reading order, TextFlow recovery, and the `roundtrip` command are available.
 - `translate --provider mock` supports CJK line breaking, cross-region flow, compact candidates,
@@ -43,9 +43,18 @@ provider-neutral protection and reliability layers.
   test fixtures. External providers receive protected segments and context, not the whole PDF.
 - Deterministic DeepSeek- and Kimi-shaped full-PDF tests cover protected content, usage/cost,
   cache resume, secret persistence, layout collision gates, and successful rendering.
-- The next milestone is M5: global layout solving. Preserve all M4.3 safety and reliability gates
-  while improving document-level layout decisions.
-- OCR, model downloads, and GUI work remain out of scope until the M4 and M5 gates are stable.
+- Local repair deterministically tries normal and compact translations with controlled font
+  fallback. M5.1 does not add Beam Search, conflict graphs, candidate caps, or an optimizer.
+- `validate_layout()` independently rechecks flow selection, overflow, font floors, source
+  bindings, page bounds, translated overlap, and protected-region overlap without persisting text
+  in its diagnostics.
+- Unsafe layouts enter REVIEW before rendering. A temporary PDF replaces `output.pdf` only after
+  all existing PDF quality gates pass; failed runs preserve any previous output byte-for-byte.
+- The four-paper normal baseline and Fast R-CNN 1.3x scenario pass with zero overflow, translated
+  overlap, protected overlap, or newly introduced sub-6pt text.
+- The next planned milestone is M5-C translation context enhancement. Page-level global search is
+  deferred until a recorded failure corpus proves bounded local repair is insufficient.
+- OCR, model downloads, and GUI work remain out of scope for M5-C.
 
 When the milestone changes, update this section and the build-flow status in the same change.
 

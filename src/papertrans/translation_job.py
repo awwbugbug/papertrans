@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from papertrans.ingest import extract_document
-from papertrans.layout import build_cjk_layout
+from papertrans.layout import build_cjk_layout, validate_layout
 from papertrans.qa import evaluate_roundtrip
 from papertrans.render import render_translated_layout
 from papertrans.translation import (
@@ -364,31 +364,77 @@ def run_translation_job(
         encoding="utf-8",
     )
 
-    try:
-        render_stats = render_translated_layout(source_path, document, layout, temporary_pdf)
-        temporary_pdf.replace(output_pdf)
-    finally:
-        if temporary_pdf.exists():
-            temporary_pdf.unlink()
-
-    pdf_quality = evaluate_roundtrip(source_path, output_pdf)
+    layout_safety = validate_layout(
+        document,
+        layout,
+        expected_flow_ids=translations,
+    )
     gates = {
-        "same_page_count": pdf_quality["same_page_count"],
-        "same_page_dimensions": pdf_quality["same_page_dimensions"],
-        "links_preserved": pdf_quality["links_preserved"],
-        "no_layout_overflow": layout.stats["overflow_flow_count"] == 0,
+        "complete_layout_selection": (
+            layout_safety.missing_flow_count == 0
+            and layout_safety.duplicate_flow_count == 0
+            and layout_safety.unexpected_flow_count == 0
+        ),
+        "layout_geometry_valid": (
+            layout_safety.region_binding_count == 0
+            and layout_safety.page_bounds_count == 0
+        ),
+        "no_layout_overflow": layout_safety.overflow_flow_count == 0,
         "no_new_sub_6pt_text": layout.stats["new_sub_6pt_flow_count"] == 0,
         "minimum_font_scale_at_least_0_72": layout.stats["minimum_font_scale"] >= 0.72,
-        "no_translated_line_overlaps": layout.stats["translated_line_overlap_count"] == 0,
-        "no_protected_region_overlaps": layout.stats["protected_region_overlap_count"] == 0,
+        "no_translated_line_overlaps": layout_safety.translated_overlap_count == 0,
+        "no_protected_region_overlaps": layout_safety.protected_overlap_count == 0,
         "protected_tokens_restored": translation_batch.stats["passed"],
         "provider_execution_completed": reliable_provider.stats.failure_count == 0,
-        "rendered_lines_present": render_stats.rendered_lines > 0,
     }
+    render_payload: dict[str, Any]
+    pdf_quality: dict[str, Any]
+    output_replaced = False
+    if layout_safety.passed:
+        try:
+            render_stats = render_translated_layout(source_path, document, layout, temporary_pdf)
+            pdf_quality = evaluate_roundtrip(source_path, temporary_pdf)
+            gates.update(
+                {
+                    "same_page_count": pdf_quality["same_page_count"],
+                    "same_page_dimensions": pdf_quality["same_page_dimensions"],
+                    "links_preserved": pdf_quality["links_preserved"],
+                    "rendered_lines_present": render_stats.rendered_lines > 0,
+                }
+            )
+            render_payload = render_stats.to_dict()
+            if all(gates.values()):
+                temporary_pdf.replace(output_pdf)
+                output_replaced = True
+        finally:
+            if temporary_pdf.exists():
+                temporary_pdf.unlink()
+    else:
+        gates.update(
+            {
+                "same_page_count": False,
+                "same_page_dimensions": False,
+                "links_preserved": False,
+                "rendered_lines_present": False,
+            }
+        )
+        render_payload = {"skipped": True, "reason": "layout_safety_review"}
+        pdf_quality = {"skipped": True, "reason": "layout_safety_review"}
+
+    passed = all(gates.values())
+    if passed:
+        review_reasons: list[str] = []
+    elif not layout_safety.passed:
+        review_reasons = list(layout_safety.violations)
+    else:
+        review_reasons = [gate for gate, value in gates.items() if not value]
     report = {
         "schema_version": "0.1",
+        "status": "pass" if passed else "review",
         "source_path": str(source_path),
         "output_path": str(output_pdf),
+        "output_replaced": output_replaced,
+        "review_reasons": review_reasons,
         "mode": "translated_pdf",
         "provider": provider.name,
         "provider_configuration": provider_configuration,
@@ -396,10 +442,11 @@ def run_translation_job(
         "provider_execution": reliable_provider.stats.to_dict(),
         "limitations": _report_limitations(provider.name),
         "layout": layout.stats,
-        "render": render_stats.to_dict(),
+        "layout_safety": layout_safety.to_dict(),
+        "render": render_payload,
         "pdf_quality": pdf_quality,
         "gates": gates,
-        "passed": all(gates.values()),
+        "passed": passed,
     }
     report_json = resolved_output / "translation-report.json"
     report_json.write_text(
