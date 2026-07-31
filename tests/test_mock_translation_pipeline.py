@@ -41,6 +41,7 @@ def test_mock_translation_pipeline_creates_cjk_pdf_and_layout_report(tmp_path: P
     assert result.translations_json.is_file()
     assert result.layout_json.is_file()
     assert result.report_json.is_file()
+    assert result.report["provider"] == "mock"
     assert result.report["layout"]["overflow_flow_count"] == 0
     assert result.report["render"]["rendered_lines"] > 0
     assert result.report["protection"]["token_count"] == 2
