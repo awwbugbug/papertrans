@@ -11,4 +11,5 @@ dist/
 .papertrans/
 models/
 test_pdf/
+.worktrees/
 *.log
