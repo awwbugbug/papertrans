@@ -19,9 +19,9 @@ feature.
 
 ## Current milestone
 
-M6.3 is complete: PaddleOCR physical lines recover into paragraph-level TextFlows and optional
-reference PDFs produce text-free OCR quality reports without weakening M4.3 protection, M5.1
-layout safety, or M5-C bounded translation context.
+M6.4 is complete: opt-in PaddleOCR now arbitrates sufficiently large image regions on mixed pages
+without replacing reliable native text or weakening M4.3 protection, M5.1 layout safety, or M5-C
+bounded translation context.
 
 - Native extraction, reading order, TextFlow recovery, and the `roundtrip` command are available.
 - `translate --provider mock` supports CJK line breaking, cross-region flow, compact candidates,
@@ -61,6 +61,17 @@ layout safety, or M5-C bounded translation context.
 - Prompt version `academic_pdf_zh_v2` makes the current-segment boundary explicit. Context and
   relevant glossary entries participate in existing hash cache keys without entering cache
   metadata as plaintext.
+- Mixed-page OCR renders image crops rather than whole pages, maps recognition coordinates with
+  the crop offset, removes lines that duplicate native text, and only fuses text-heavy regions.
+- A text-heavy crop requires at least 3 accepted lines, 80 non-whitespace characters, and 0.80
+  mean confidence. Sparse figure labels remain protected and do not become translation flows.
+- `m6_ocr_plan_v3` adds `use_mixed`; `m6_ocr_run_v2` records candidate, accepted, and ignored
+  regions plus duplicate-line counts without persisting paper text.
+- The practical mixed-page PP-OCRv6 and mock-translation gate passes with zero overflow, new
+  sub-6pt text, translated overlap, or protected overlap. Extreme phone-photo scans are not a
+  current blocking quality gate.
+- The next milestone is a lightweight M7 local UI over the stable CLI pipeline. Dedicated
+  table/formula OCR remains deferred.
 - `translation-report.json` records aggregate context coverage and clipping counts only.
 - A real-paper offline Mock run covers 117 contextualized flows and passes the existing PDF gates
   with zero overflow, translated overlap, and protected overlap.

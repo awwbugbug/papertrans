@@ -47,6 +47,7 @@ def test_planner_keeps_reliable_native_text_and_routes_scan_pages() -> None:
         "keep_native_count": 1,
         "run_ocr_count": 1,
         "use_ocr_count": 0,
+        "use_mixed_count": 0,
         "review_count": 0,
         "skip_blank_count": 0,
         "blocking_page_count": 1,
@@ -154,3 +155,30 @@ def test_planner_accepts_confident_fused_ocr_without_counting_it_as_native() -> 
     assert plan.pages[0].diagnostics.native_character_count == 0
     assert plan.pages[0].diagnostics.ocr_character_count > 80
     assert plan.blocking_page_numbers == ()
+
+
+def test_planner_reports_mixed_native_and_ocr_content_separately() -> None:
+    page = Page(
+        number=1,
+        width=400,
+        height=600,
+        regions=[
+            _text_region("native", "Reliable native academic paragraph. " * 5),
+            _image_region("embedded-scan", BoundingBox(40, 280, 360, 540)),
+            Region(
+                id="ocr-line",
+                type=RegionType.PARAGRAPH,
+                bbox=BoundingBox(55, 310, 345, 330),
+                source_text="Recovered text from an embedded scan. " * 4,
+                confidence=0.96,
+                metadata={"content_source": "paddleocr"},
+            ),
+        ],
+    )
+
+    plan = build_ocr_plan(Document(source_path="fixture.pdf", pages=[page]))
+
+    assert plan.pages[0].action is OCRAction.USE_MIXED
+    assert plan.pages[0].reason_codes == ("confident_native_and_local_ocr",)
+    assert plan.summary["use_mixed_count"] == 1
+    assert plan.to_dict()["schema_version"] == "m6_ocr_plan_v3"

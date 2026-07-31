@@ -8,13 +8,14 @@ from typing import Any
 
 from papertrans.domain import BoundingBox, Document, Page
 
-OCR_PLAN_SCHEMA_VERSION = "m6_ocr_plan_v2"
+OCR_PLAN_SCHEMA_VERSION = "m6_ocr_plan_v3"
 
 
 class OCRAction(StrEnum):
     KEEP_NATIVE = "keep_native"
     RUN_OCR = "run_ocr"
     USE_OCR = "use_ocr"
+    USE_MIXED = "use_mixed"
     REVIEW = "review"
     SKIP_BLANK = "skip_blank"
 
@@ -104,6 +105,9 @@ class OCRPlan:
             ),
             "run_ocr_count": sum(page.action is OCRAction.RUN_OCR for page in self.pages),
             "use_ocr_count": sum(page.action is OCRAction.USE_OCR for page in self.pages),
+            "use_mixed_count": sum(
+                page.action is OCRAction.USE_MIXED for page in self.pages
+            ),
             "review_count": sum(page.action is OCRAction.REVIEW for page in self.pages),
             "skip_blank_count": sum(
                 page.action is OCRAction.SKIP_BLANK for page in self.pages
@@ -164,8 +168,12 @@ def _decide_page(page: Page, policy: OCRPolicy) -> OCRPageDecision:
         diagnostics.ocr_character_count >= policy.minimum_ocr_character_count
         and diagnostics.ocr_mean_confidence >= policy.minimum_ocr_confidence
     ):
-        action = OCRAction.USE_OCR
-        reason = "confident_local_ocr"
+        if diagnostics.native_character_count:
+            action = OCRAction.USE_MIXED
+            reason = "confident_native_and_local_ocr"
+        else:
+            action = OCRAction.USE_OCR
+            reason = "confident_local_ocr"
         confidence = diagnostics.ocr_mean_confidence
     elif diagnostics.ocr_character_count:
         action = OCRAction.REVIEW

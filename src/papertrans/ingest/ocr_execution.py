@@ -29,6 +29,8 @@ class RenderedOCRPage:
     channels: int
     page_width: float
     page_height: float
+    clip_bbox: BoundingBox
+    source_region_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,16 +54,24 @@ class OCRRun:
     recognized_page_count: int
     recognized_line_count: int
     rejected_line_count: int
+    candidate_region_count: int = 0
+    recognized_region_count: int = 0
+    ignored_region_count: int = 0
+    duplicate_line_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": "m6_ocr_run_v1",
+            "schema_version": "m6_ocr_run_v2",
             "backend": self.backend,
             "device": self.device,
             "candidate_page_count": self.candidate_page_count,
             "recognized_page_count": self.recognized_page_count,
             "recognized_line_count": self.recognized_line_count,
             "rejected_line_count": self.rejected_line_count,
+            "candidate_region_count": self.candidate_region_count,
+            "recognized_region_count": self.recognized_region_count,
+            "ignored_region_count": self.ignored_region_count,
+            "duplicate_line_count": self.duplicate_line_count,
         }
 
 
@@ -171,6 +181,10 @@ def prepare_document(
     recognized_pages = 0
     recognized_lines = 0
     rejected_lines = 0
+    candidate_regions = 0
+    recognized_regions = 0
+    ignored_regions = 0
+    duplicate_lines = 0
     with pymupdf.open(source_path) as pdf:
         for page_number in candidates:
             model_page = page_by_number[page_number]
@@ -188,6 +202,7 @@ def prepare_document(
                 channels=pixmap.n,
                 page_width=model_page.width,
                 page_height=model_page.height,
+                clip_bbox=BoundingBox(0, 0, model_page.width, model_page.height),
             )
             lines = resolved_backend.recognize(rendered)
             accepted, rejected = _fuse_ocr_lines(model_page, rendered, lines)
@@ -196,6 +211,54 @@ def prepare_document(
             if accepted:
                 recognized_pages += 1
                 _mark_scan_background(model_page)
+        full_page_candidates = set(candidates)
+        for model_page in document.pages:
+            if model_page.number in full_page_candidates:
+                continue
+            source_page = pdf[model_page.number - 1]
+            for image_region in _mixed_image_candidates(model_page):
+                candidate_regions += 1
+                clip = pymupdf.Rect(
+                    image_region.bbox.x0,
+                    image_region.bbox.y0,
+                    image_region.bbox.x1,
+                    image_region.bbox.y1,
+                )
+                pixmap = source_page.get_pixmap(
+                    dpi=config.dpi,
+                    alpha=False,
+                    colorspace=pymupdf.csRGB,
+                    clip=clip,
+                )
+                rendered = RenderedOCRPage(
+                    page_number=model_page.number,
+                    pixels=bytes(pixmap.samples),
+                    pixel_width=pixmap.width,
+                    pixel_height=pixmap.height,
+                    channels=pixmap.n,
+                    page_width=model_page.width,
+                    page_height=model_page.height,
+                    clip_bbox=image_region.bbox,
+                    source_region_id=image_region.id,
+                )
+                lines = resolved_backend.recognize(rendered)
+                proposed, rejected = _build_ocr_regions(model_page, rendered, lines)
+                rejected_lines += rejected
+                unique, duplicates = _without_native_duplicates(model_page, proposed)
+                duplicate_lines += duplicates
+                if not _is_text_heavy_region(unique):
+                    ignored_regions += 1
+                    continue
+                start = sum(
+                    region.metadata.get("content_source") == "paddleocr"
+                    for region in model_page.regions
+                )
+                for index, region in enumerate(unique, start=start):
+                    region.id = f"p{model_page.number}-ocr-{index}"
+                    model_page.regions.append(region)
+                recognized_regions += 1
+                recognized_lines += len(unique)
+                image_region.metadata["ocr_background"] = True
     recover_document_structure(document)
     final_plan = build_ocr_plan(document, ocr_backend=resolved_backend.name)
     return OCRPreparationResult(
@@ -208,7 +271,23 @@ def prepare_document(
             recognized_page_count=recognized_pages,
             recognized_line_count=recognized_lines,
             rejected_line_count=rejected_lines,
+            candidate_region_count=candidate_regions,
+            recognized_region_count=recognized_regions,
+            ignored_region_count=ignored_regions,
+            duplicate_line_count=duplicate_lines,
         ),
+    )
+
+
+def _mixed_image_candidates(page: Any) -> tuple[Region, ...]:
+    page_area = max(1.0, page.width * page.height)
+    return tuple(
+        region
+        for region in page.regions
+        if region.metadata.get("native_block_type") == "image"
+        and region.bbox.width / max(1.0, page.width) >= 0.25
+        and region.bbox.height / max(1.0, page.height) >= 0.12
+        and region.bbox.width * region.bbox.height / page_area >= 0.08
     )
 
 
@@ -232,13 +311,28 @@ def _fuse_ocr_lines(
     rendered: RenderedOCRPage,
     lines: tuple[OCRLine, ...],
 ) -> tuple[int, int]:
-    scale_x = rendered.page_width / rendered.pixel_width
-    scale_y = rendered.page_height / rendered.pixel_height
-    accepted = 0
+    regions, rejected = _build_ocr_regions(page, rendered, lines)
+    start = sum(
+        region.metadata.get("content_source") == "paddleocr" for region in page.regions
+    )
+    for index, region in enumerate(regions, start=start):
+        region.id = f"p{page.number}-ocr-{index}"
+        page.regions.append(region)
+    return len(regions), rejected
+
+
+def _build_ocr_regions(
+    page: Any,
+    rendered: RenderedOCRPage,
+    lines: tuple[OCRLine, ...],
+) -> tuple[list[Region], int]:
+    scale_x = rendered.clip_bbox.width / rendered.pixel_width
+    scale_y = rendered.clip_bbox.height / rendered.pixel_height
+    regions: list[Region] = []
     rejected = 0
     for line in lines:
-        xs = [point[0] * scale_x for point in line.polygon]
-        ys = [point[1] * scale_y for point in line.polygon]
+        xs = [rendered.clip_bbox.x0 + point[0] * scale_x for point in line.polygon]
+        ys = [rendered.clip_bbox.y0 + point[1] * scale_y for point in line.polygon]
         x0 = max(0.0, min(page.width, min(xs)))
         y0 = max(0.0, min(page.height, min(ys)))
         x1 = max(0.0, min(page.width, max(xs)))
@@ -246,9 +340,9 @@ def _fuse_ocr_lines(
         if not line.text.strip() or x1 - x0 < 0.5 or y1 - y0 < 0.5:
             rejected += 1
             continue
-        page.regions.append(
+        regions.append(
             Region(
-                id=f"p{page.number}-ocr-{accepted}",
+                id=f"p{page.number}-ocr-proposed-{len(regions)}",
                 type=RegionType.PARAGRAPH,
                 bbox=BoundingBox(x0, y0, x1, y1),
                 source_text=line.text,
@@ -259,14 +353,54 @@ def _fuse_ocr_lines(
                     "content_source": "paddleocr",
                     "content_confidence": round(line.confidence, 4),
                     "ocr_polygon": [
-                        [round(point[0] * scale_x, 3), round(point[1] * scale_y, 3)]
+                        [
+                            round(rendered.clip_bbox.x0 + point[0] * scale_x, 3),
+                            round(rendered.clip_bbox.y0 + point[1] * scale_y, 3),
+                        ]
                         for point in line.polygon
                     ],
+                    "ocr_source_region_id": rendered.source_region_id,
                 },
             )
         )
-        accepted += 1
-    return accepted, rejected
+    return regions, rejected
+
+
+def _without_native_duplicates(
+    page: Any, proposed: list[Region]
+) -> tuple[list[Region], int]:
+    native = [
+        region
+        for region in page.regions
+        if region.source_text and region.metadata.get("content_source") == "native_pdf"
+    ]
+    unique: list[Region] = []
+    duplicate_count = 0
+    for region in proposed:
+        area = max(1.0, region.bbox.width * region.bbox.height)
+        if any(_intersection_area(region.bbox, item.bbox) / area >= 0.5 for item in native):
+            duplicate_count += 1
+        else:
+            unique.append(region)
+    return unique, duplicate_count
+
+
+def _intersection_area(first: BoundingBox, second: BoundingBox) -> float:
+    width = max(0.0, min(first.x1, second.x1) - max(first.x0, second.x0))
+    height = max(0.0, min(first.y1, second.y1) - max(first.y0, second.y0))
+    return width * height
+
+
+def _is_text_heavy_region(regions: list[Region]) -> bool:
+    if len(regions) < 3:
+        return False
+    character_count = sum(
+        not character.isspace()
+        for region in regions
+        for character in region.source_text or ""
+    )
+    mean_confidence = sum(region.confidence for region in regions) / len(regions)
+    return character_count >= 80 and mean_confidence >= 0.80
 
 
 def _mark_scan_background(page: Any) -> None:

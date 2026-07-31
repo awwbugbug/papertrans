@@ -129,6 +129,8 @@ def _classify_figure_text(page: Page, body_size: float) -> None:
         for region in page.regions:
             if region is caption or not region.source_text or region.type != RegionType.PARAGRAPH:
                 continue
+            if _is_text_from_accepted_ocr_background(page, region):
+                continue
             if not (visual_top <= region.bbox.y0 and region.bbox.y1 <= caption.bbox.y1 + 2):
                 continue
             if _overlap_x(region, caption) <= 0:
@@ -144,6 +146,26 @@ def _classify_figure_text(page: Page, body_size: float) -> None:
                 region.translatable = False
                 region.confidence = 0.82
                 region.metadata["structure_rule"] = "text_inside_figure_above_caption"
+
+
+def _is_text_from_accepted_ocr_background(page: Page, region: Region) -> bool:
+    if region.metadata.get("content_source") != "paddleocr":
+        return False
+    source_region_id = region.metadata.get("ocr_source_region_id")
+    backgrounds = [
+        candidate
+        for candidate in page.regions
+        if candidate.metadata.get("ocr_background") is True
+    ]
+    if source_region_id is not None:
+        return any(candidate.id == source_region_id for candidate in backgrounds)
+    return any(
+        candidate.bbox.x0 <= region.bbox.x0
+        and candidate.bbox.y0 <= region.bbox.y0
+        and candidate.bbox.x1 >= region.bbox.x1
+        and candidate.bbox.y1 >= region.bbox.y1
+        for candidate in backgrounds
+    )
 
 
 def _classify_table_text(page: Page, body_size: float) -> None:

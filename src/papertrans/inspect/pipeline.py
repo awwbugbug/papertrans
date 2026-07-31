@@ -122,7 +122,7 @@ def _write_report(
         f"- Source: `{document.source_path}`",
         f"- Pages: {len(document.pages)}",
         f"- Schema: `{document.schema_version}`",
-        "- Status: M6.3 OCR line-to-paragraph recovery with optional quality reference",
+        "- Status: M6.4 selective mixed-page native/OCR arbitration",
         f"- Text flows: {document.metadata.get('text_flow_stats', {}).get('flow_count', 0)}",
         "- Merged flows: "
         f"{document.metadata.get('text_flow_stats', {}).get('merged_flow_count', 0)}",
@@ -135,6 +135,7 @@ def _write_report(
         f"- Native pages: {ocr_plan.summary['keep_native_count']}",
         f"- OCR candidate pages: {ocr_plan.summary['run_ocr_count']}",
         f"- OCR accepted pages: {ocr_plan.summary['use_ocr_count']}",
+        f"- Mixed native/OCR pages: {ocr_plan.summary['use_mixed_count']}",
         f"- OCR review pages: {ocr_plan.summary['review_count']}",
         "- OCR line continuity edges: "
         f"{document.metadata.get('text_flow_stats', {}).get('ocr_line_edges', 0)}",
@@ -173,9 +174,9 @@ def _write_report(
             "- Figure and table captions use prefix rules; formula and reference detection "
             "are pending.",
             "- Cross-column headings and irregular magazine-style layouts are not solved yet.",
-            "- OCR is opt-in and only scan-like pages are sent to the local engine.",
-            "- Region-level native/OCR arbitration and dedicated table/formula OCR "
-            "remain deferred.",
+            "- OCR is opt-in; scan-like pages and sufficiently large image regions may be sent "
+            "to the local engine.",
+            "- Dedicated table/formula OCR remains deferred.",
             "",
         ]
     )
