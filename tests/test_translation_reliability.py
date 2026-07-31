@@ -1,3 +1,4 @@
+import traceback
 from pathlib import Path
 
 import pytest
@@ -252,7 +253,7 @@ def test_non_retryable_error_counts_usage_once_and_is_sanitized(tmp_path: Path) 
 
         def translate(self, requests: list[TranslationRequest]) -> list[TranslationResult]:
             raise NonRetryableProviderError(
-                error_type="authentication_failed",
+                error_type=f"authentication_failed:{sentinel}",
                 http_status=401,
                 usage=TranslationUsage(input_tokens=12, output_tokens=0),
             )
@@ -260,8 +261,18 @@ def test_non_retryable_error_counts_usage_once_and_is_sanitized(tmp_path: Path) 
     reliable = ReliableTranslationProvider(RejectedProvider(), tmp_path / "cache")
     with pytest.raises(ProviderExecutionError) as exc_info:
         reliable.translate([TranslationRequest(segment_id="s1", text=sentinel)])
-    assert exc_info.value.error_type == "authentication_failed"
+    assert exc_info.value.error_type == "provider_error"
     assert exc_info.value.http_status == 401
     assert sentinel not in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    formatted = "".join(
+        traceback.format_exception(
+            exc_info.type,
+            exc_info.value,
+            exc_info.value.__traceback__,
+        )
+    )
+    assert sentinel not in formatted
     assert reliable.stats.to_dict()["usage"]["input_tokens"] == 12
     assert reliable.stats.retry_count == 0

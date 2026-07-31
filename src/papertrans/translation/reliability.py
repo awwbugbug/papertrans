@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,6 +16,14 @@ from papertrans.translation.base import (
     TranslationResult,
     TranslationUsage,
 )
+
+_SAFE_ERROR_TYPE = re.compile(r"[a-z][a-z0-9_]{0,63}\\Z")
+
+
+def _normalize_error_type(error_type: object) -> str:
+    if isinstance(error_type, str) and _SAFE_ERROR_TYPE.fullmatch(error_type):
+        return error_type
+    return "provider_error"
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +128,7 @@ class ProviderError(RuntimeError):
         http_status: int | None = None,
         usage: TranslationUsage | None = None,
     ) -> None:
-        self.error_type = error_type
+        self.error_type = _normalize_error_type(error_type)
         self.http_status = http_status
         self.usage = usage
         super().__init__(error_type)
@@ -137,7 +146,9 @@ class ProviderExecutionError(RuntimeError):
     def __init__(self, segment_id: str, attempts: int, cause: Exception) -> None:
         self.segment_id = segment_id
         self.attempts = attempts
-        self.error_type = getattr(cause, "error_type", type(cause).__name__)
+        self.error_type = _normalize_error_type(
+            getattr(cause, "error_type", type(cause).__name__)
+        )
         self.http_status = getattr(cause, "http_status", None)
         self.cause_type = self.error_type
         super().__init__(
@@ -228,7 +239,7 @@ class ReliableTranslationProvider:
                 )
         self.stats.failure_count += 1
         assert last_error is not None
-        raise ProviderExecutionError(request.segment_id, attempts, last_error) from last_error
+        raise ProviderExecutionError(request.segment_id, attempts, last_error) from None
 
     def _apply_rate_limit(self) -> None:
         if self.requests_per_second <= 0:
