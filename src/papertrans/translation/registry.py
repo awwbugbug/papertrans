@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import unicodedata
 from collections.abc import Mapping
 from urllib.parse import urlsplit
 
@@ -112,14 +113,20 @@ def _required_api_key(environment: Mapping[str, str], key_name: str) -> str:
 
 
 def _is_absolute_http_url(value: str) -> bool:
-    parsed = urlsplit(value)
+    if any(
+        character.isspace() or unicodedata.category(character) == "Cc"
+        for character in value
+    ):
+        return False
     try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
         _port = parsed.port
     except ValueError:
         return False
     return (
         parsed.scheme in {"http", "https"}
-        and parsed.hostname is not None
+        and hostname is not None
         and parsed.username is None
         and parsed.password is None
         and not parsed.query

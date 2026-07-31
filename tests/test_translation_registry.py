@@ -102,3 +102,38 @@ def test_compatible_rejects_invalid_authority_port() -> None:
         )
 
     assert "api-key-sentinel" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://example.test :443/v1",
+        "https://example.test/v1\ncontrol-sentinel",
+        "https://[2001:db8::1/v1",
+    ],
+)
+def test_compatible_rejects_malformed_authorities_without_echoing_input(
+    base_url: str,
+) -> None:
+    with pytest.raises(ValueError) as exc_info:
+        create_translation_provider(
+            "compatible",
+            base_url=base_url,
+            model="custom",
+            environ={"PAPERTRANS_COMPATIBLE_API_KEY": "api-key-sentinel"},
+        )
+
+    assert str(exc_info.value) == "--base-url must be an absolute http or https URL"
+    assert "sentinel" not in str(exc_info.value)
+
+
+def test_compatible_accepts_structurally_valid_ipv6_endpoint() -> None:
+    provider = create_translation_provider(
+        "compatible",
+        base_url="https://[2001:db8::1]:443/v1",
+        model="custom",
+        environ={"PAPERTRANS_COMPATIBLE_API_KEY": "api-key-sentinel"},
+    )
+
+    assert provider.cache_identity["base_url"] == "https://[2001:db8::1]:443/v1"
+    assert "api-key-sentinel" not in str(provider.cache_identity)
