@@ -2,7 +2,7 @@
 
 PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目标不是简单地提取文字并覆盖回 PDF，而是建立可检查的文档中间表示，恢复阅读顺序，并在可读性约束下尽量保持原页面结构。
 
-当前版本已完成 **M4.2 翻译可靠性层基线**：除占位符保护外，所有翻译提供方都可以通过统一包装器获得原子磁盘缓存、指数退避重试、请求限速和逐段断点恢复。模拟中文只用于检验管线和排版，不代表真实翻译质量。
+当前版本已完成 **M4.3 多提供方翻译基线**：DeepSeek、Kimi 和自定义 OpenAI-compatible Chat Completions API 已接入统一的占位符保护、原子缓存、重试、限速、断点恢复及用量/费用统计。`mock` 仍是默认提供方且完全离线；模拟中文只用于检验管线和排版，不代表真实翻译质量。
 
 ## 当前能力
 
@@ -24,6 +24,8 @@ PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目�
 - 翻译结果按提供方配置指纹和请求内容缓存；不同模型、提示词版本或 Mock 长度配置不会错误共享缓存。
 - 每个成功段落立即原子落盘，任务中途失败后可以从已完成段落继续。
 - 输出 `provider-run.json`，记录缓存命中、真实调用、重试、失败及限速等待统计。
+- 支持显式选择 `deepseek`、`kimi` 和 best-effort 的 `compatible` 提供方；一次 JSON 响应同时返回普通译文与紧凑译文。
+- 对 DeepSeek/Kimi 的新调用记录输入、缓存输入、输出令牌和按日期快照估算的费用；本地缓存命中不重复计费。
 
 ## 本地开发
 
@@ -73,7 +75,33 @@ python -m venv .venv
 .\.venv\Scripts\papertrans translate .\paper.pdf --provider mock --cache-dir .\.papertrans\cache\mock --max-attempts 3 --requests-per-second 2
 ```
 
-翻译产物包括 `output.pdf`、`document.json`、`protected-segments.json`、`provider-run.json`、`translations.json`、`layout.json` 和 `mock-translation-report.json`。保护映射和提供方运行状态都会在请求前落盘；成功后分别更新为 `validated` 和 `completed`。默认使用本机 Microsoft YaHei；可通过 `PAPERTRANS_CJK_FONT` 和 `PAPERTRANS_CJK_BOLD_FONT` 指定本地字体文件。字体仅在运行时读取，不会复制进仓库。
+### 外部翻译提供方
+
+外部提供方必须显式选择。密钥只从环境变量读取，没有也不应增加 API-key 命令行参数。DeepSeek 默认模型为 `deepseek-v4-flash`，Kimi 默认模型为 `kimi-k2.6`；两者默认关闭 thinking 模式，也可以用 `--model` 覆盖模型名。
+
+```powershell
+$env:DEEPSEEK_API_KEY = "set-locally"
+.\.venv\Scripts\papertrans translate .\paper.pdf --provider deepseek
+
+$env:MOONSHOT_API_KEY = "set-locally"
+.\.venv\Scripts\papertrans translate .\paper.pdf --provider kimi
+
+$env:MY_PROVIDER_API_KEY = "set-locally"
+.\.venv\Scripts\papertrans translate .\paper.pdf --provider compatible `
+  --base-url https://example.com/v1 `
+  --model example-model `
+  --api-key-env MY_PROVIDER_API_KEY
+```
+
+`compatible` 只保证尽力适配支持 Chat Completions 和 JSON object 响应的服务，必须提供绝对 HTTP(S) `--base-url` 和 `--model`；不同服务的私有字段、鉴权方式或响应差异可能仍需专用适配器。PaperTrans 不会在提供方失败时自动切换到其他服务，以免在未授权的情况下把论文发送到另一端点。
+
+选择外部提供方后，PaperTrans 会逐段发送经过占位符保护的论文文本以及必要的段落上下文；不会上传整份 PDF。这里的“保护”用于确保引用、URL、DOI、变量和单位可恢复，并不等于隐私脱敏。处理未公开或敏感论文前，应先确认所选服务的隐私与数据保留条款。API 密钥不会进入缓存身份、任务 JSON 或错误摘要。
+
+费用只是按提供方公开单价计算的日期快照估算，并非账单。当前快照日期为 **2026-07-31**：DeepSeek 以 USD 估算，缓存输入/未缓存输入/输出分别为 `$0.0028 / $0.14 / $0.28` 每百万令牌；Kimi 以 CNY 估算，分别为 `¥1.10 / ¥6.50 / ¥27.00` 每百万令牌。服务方后续调价不会自动改写历史任务。
+
+可选的真实服务 smoke test 只应使用一份短小、合成且不敏感的 PDF：先在当前本地终端设置新的环境变量密钥，再显式选择提供方，并使用独立输出目录。确认 `provider-run.json`、保护验证和质量门后，立即在服务方控制台撤销临时密钥。不要把真实密钥写入命令历史、脚本、仓库或 bug 报告；自动化测试始终使用 `MockTransport`，不会访问真实网络。
+
+翻译产物包括 `output.pdf`、`document.json`、`protected-segments.json`、`provider-run.json`、`translations.json`、`layout.json` 和 `translation-report.json`。保护映射和提供方运行状态都会在请求前落盘；成功后分别更新为 `validated` 和 `completed`。默认使用本机 Microsoft YaHei；可通过 `PAPERTRANS_CJK_FONT` 和 `PAPERTRANS_CJK_BOLD_FONT` 指定本地字体文件。字体仅在运行时读取，不会复制进仓库。
 
 当前渲染仍使用白色填充清除原文字形，因此只适合白底论文；彩色背景、纹理背景及与文本重叠的复杂矢量对象尚未解决。
 

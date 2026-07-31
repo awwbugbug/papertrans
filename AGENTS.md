@@ -19,7 +19,8 @@ feature.
 
 ## Current milestone
 
-M4.2 is complete: provider-neutral cache, retry, rate limiting, and resumability are integrated.
+M4.3 is complete: named and best-effort OpenAI-compatible providers are integrated on top of the
+provider-neutral protection and reliability layers.
 
 - Native extraction, reading order, TextFlow recovery, and the `roundtrip` command are available.
 - `translate --provider mock` supports CJK line breaking, cross-region flow, compact candidates,
@@ -31,8 +32,19 @@ M4.2 is complete: provider-neutral cache, retry, rate limiting, and resumability
 - `provider-run.json` must be written before provider calls. Successful segments are cached
   atomically and must remain reusable after a later segment fails.
 - Cache keys must include provider configuration identity but never API keys or secrets.
-- The next milestone is M4.3: add an OpenAI-compatible provider on top of the existing protection
-  and reliability layers, including usage and cost reporting.
+- `mock` remains the offline default. `deepseek`, `kimi`, and `compatible` require explicit user
+  selection, and failures must never trigger automatic provider failover.
+- DeepSeek defaults to `deepseek-v4-flash`; Kimi defaults to `kimi-k2.6`; named profiles use
+  non-thinking requests. Compatible mode requires an explicit absolute HTTP(S) base URL and model
+  and remains best-effort.
+- Provider responses return normal and compact translations together. Fresh-call token usage and
+  dated cost estimates are recorded; cache hits report zero new billable usage.
+- Credentials are environment-only and must never enter cache identity, artifacts, diagnostics, or
+  test fixtures. External providers receive protected segments and context, not the whole PDF.
+- Deterministic DeepSeek- and Kimi-shaped full-PDF tests cover protected content, usage/cost,
+  cache resume, secret persistence, layout collision gates, and successful rendering.
+- The next milestone is M5: global layout solving. Preserve all M4.3 safety and reliability gates
+  while improving document-level layout decisions.
 - OCR, model downloads, and GUI work remain out of scope until the M4 and M5 gates are stable.
 
 When the milestone changes, update this section and the build-flow status in the same change.
