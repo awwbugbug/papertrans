@@ -1,6 +1,6 @@
 import json
 
-from papertrans.translation import TranslationRequest, TranslationUsage
+from papertrans.translation import TranslationRequest, TranslationUsage, prompt
 from papertrans.translation.profiles import DEEPSEEK_PROFILE, KIMI_PROFILE
 from papertrans.translation.prompt import PROMPT_VERSION, build_chat_messages
 
@@ -27,6 +27,14 @@ def test_profiles_estimate_native_currency_cost() -> None:
     assert KIMI_PROFILE.pricing is not None
     assert KIMI_PROFILE.pricing.estimate(usage) == 7.85
     assert KIMI_PROFILE.pricing.currency == "CNY"
+
+
+def test_cache_identity_uses_current_prompt_version(monkeypatch) -> None:
+    monkeypatch.setattr(prompt, "PROMPT_VERSION", "academic_pdf_zh_v2")
+
+    identity = DEEPSEEK_PROFILE.cache_identity(DEEPSEEK_PROFILE.default_model)
+
+    assert identity["prompt_version"] == "academic_pdf_zh_v2"
 
 
 def test_prompt_is_versioned_and_carries_only_limited_segment_context() -> None:

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from types import MappingProxyType
 
+from papertrans.translation import prompt
 from papertrans.translation.base import TranslationUsage
 
 
@@ -57,7 +58,7 @@ class ProviderProfile:
             "base_url": self.base_url.rstrip("/"),
             "model": model,
             "thinking_mode": self.thinking_mode,
-            "prompt_version": "academic_pdf_zh_v1",
+            "prompt_version": prompt.PROMPT_VERSION,
             "pricing_snapshot": self.pricing.snapshot if self.pricing else None,
         }
 
