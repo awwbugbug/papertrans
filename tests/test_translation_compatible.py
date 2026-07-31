@@ -32,7 +32,7 @@ def _provider(
     )
 
 
-def _success_response(*, usage: dict[str, int] | None = None) -> httpx.Response:
+def _success_response(*, usage: object | None = None) -> httpx.Response:
     payload: dict[str, object] = {
         "choices": [
             {
@@ -93,6 +93,33 @@ def test_client_posts_structured_non_thinking_request_and_parses_usage() -> None
     assert result.usage.cached_input_tokens == 40
     assert result.usage.uncached_input_tokens == 60
     assert result.usage.estimated_cost == 0.000014112
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [
+        {"prompt_tokens": 10},
+        {"completion_tokens": 2},
+        [],
+        {"prompt_tokens": "10", "completion_tokens": 2},
+        {"prompt_tokens": 10, "completion_tokens": True},
+    ],
+)
+def test_present_malformed_usage_is_retryable(usage: object) -> None:
+    provider = _provider(lambda request: _success_response(usage=usage))
+
+    with pytest.raises(RetryableProviderError) as exc_info:
+        provider.translate(
+            [
+                TranslationRequest(
+                    segment_id="s1",
+                    text="Source ⟦PT0001⟧",
+                    protected_tokens=("⟦PT0001⟧",),
+                )
+            ]
+        )
+
+    assert exc_info.value.error_type == "invalid_usage"
 
 
 @pytest.mark.parametrize("status", [400, 401, 402, 403, 404, 422])

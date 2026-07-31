@@ -171,7 +171,7 @@ def _parse_usage(raw_usage: object, profile: ProviderProfile) -> TranslationUsag
     if not isinstance(raw_usage, Mapping):
         raise RetryableProviderError(error_type="invalid_usage")
     if "prompt_tokens" not in raw_usage or "completion_tokens" not in raw_usage:
-        return None
+        raise RetryableProviderError(error_type="invalid_usage")
     input_tokens = _usage_integer(raw_usage, "prompt_tokens")
     output_tokens = _usage_integer(raw_usage, "completion_tokens")
     cached_input_tokens = 0
