@@ -5,6 +5,8 @@ from papertrans.translation.base import (
     TranslationUsage,
 )
 from papertrans.translation.compatible_client import ChatCompletionsTranslationProvider
+from papertrans.translation.deepseek import DeepSeekTranslationProvider
+from papertrans.translation.kimi import KimiTranslationProvider
 from papertrans.translation.mock import MockTranslationProvider
 from papertrans.translation.pipeline import (
     ProtectedTranslationBatch,
@@ -21,6 +23,7 @@ from papertrans.translation.protection import (
     protect_text,
     restore_text,
 )
+from papertrans.translation.registry import PROVIDER_NAMES, create_translation_provider
 from papertrans.translation.reliability import (
     NonRetryableProviderError,
     ProviderError,
@@ -33,6 +36,8 @@ from papertrans.translation.reliability import (
 
 __all__ = [
     "ChatCompletionsTranslationProvider",
+    "DeepSeekTranslationProvider",
+    "KimiTranslationProvider",
     "MockTranslationProvider",
     "NonRetryableProviderError",
     "ProviderError",
@@ -41,6 +46,7 @@ __all__ = [
     "ProtectedTokenError",
     "ProtectedTranslationBatch",
     "ProviderExecutionError",
+    "PROVIDER_NAMES",
     "ProviderRunStats",
     "ProtectionValidation",
     "ReliableTranslationProvider",
@@ -50,6 +56,7 @@ __all__ = [
     "TranslationRequest",
     "TranslationResult",
     "TranslationUsage",
+    "create_translation_provider",
     "placeholder_issues",
     "protect_text_flows",
     "translate_text_flows",
