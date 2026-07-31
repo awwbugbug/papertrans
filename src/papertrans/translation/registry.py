@@ -113,4 +113,15 @@ def _required_api_key(environment: Mapping[str, str], key_name: str) -> str:
 
 def _is_absolute_http_url(value: str) -> bool:
     parsed = urlsplit(value)
-    return parsed.scheme in {"http", "https"} and parsed.hostname is not None
+    try:
+        _port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.hostname is not None
+        and parsed.username is None
+        and parsed.password is None
+        and not parsed.query
+        and not parsed.fragment
+    )

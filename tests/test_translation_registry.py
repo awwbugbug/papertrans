@@ -65,3 +65,40 @@ def test_named_provider_rejects_compatible_only_options() -> None:
             base_url="https://relay.test/v1",
             environ={"DEEPSEEK_API_KEY": "key"},
         )
+
+
+@pytest.mark.parametrize(
+    ("base_url", "secret"),
+    [
+        (
+            "https://user:password-sentinel@example.test/v1",
+            "password-sentinel",
+        ),
+        ("https://example.test/v1?api_key=query-sentinel", "query-sentinel"),
+        ("https://example.test/v1#fragment-sentinel", "fragment-sentinel"),
+    ],
+)
+def test_compatible_rejects_secret_bearing_url_components(
+    base_url: str, secret: str
+) -> None:
+    with pytest.raises(ValueError, match="--base-url") as exc_info:
+        create_translation_provider(
+            "compatible",
+            base_url=base_url,
+            model="custom",
+            environ={"PAPERTRANS_COMPATIBLE_API_KEY": "api-key-sentinel"},
+        )
+
+    assert secret not in str(exc_info.value)
+
+
+def test_compatible_rejects_invalid_authority_port() -> None:
+    with pytest.raises(ValueError, match="--base-url") as exc_info:
+        create_translation_provider(
+            "compatible",
+            base_url="https://example.test:not-a-port/v1",
+            model="custom",
+            environ={"PAPERTRANS_COMPATIBLE_API_KEY": "api-key-sentinel"},
+        )
+
+    assert "api-key-sentinel" not in str(exc_info.value)
