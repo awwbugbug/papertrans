@@ -15,6 +15,7 @@ def test_translate_defaults_to_mock_without_api_key_argument() -> None:
     assert args.base_url is None
     assert args.api_key_env is None
     assert args.glossary is None
+    assert args.ocr_backend is None
     option_strings = {
         option
         for action in parser._subparsers._group_actions[0].choices[
@@ -23,6 +24,25 @@ def test_translate_defaults_to_mock_without_api_key_argument() -> None:
         for option in action.option_strings
     }
     assert "--api-key" not in option_strings
+
+
+def test_inspect_accepts_explicit_local_ocr_configuration() -> None:
+    args = build_parser().parse_args(
+        [
+            "inspect",
+            "paper.pdf",
+            "--ocr-backend",
+            "paddleocr",
+            "--ocr-model-dir",
+            "models/paddleocr",
+            "--ocr-device",
+            "cpu",
+        ]
+    )
+
+    assert args.ocr_backend == "paddleocr"
+    assert args.ocr_model_dir == Path("models/paddleocr")
+    assert args.ocr_device == "cpu"
 
 
 def test_translate_accepts_named_and_compatible_configuration() -> None:

@@ -46,6 +46,7 @@ def test_planner_keeps_reliable_native_text_and_routes_scan_pages() -> None:
         "page_count": 2,
         "keep_native_count": 1,
         "run_ocr_count": 1,
+        "use_ocr_count": 0,
         "review_count": 0,
         "skip_blank_count": 0,
         "blocking_page_count": 1,
@@ -127,3 +128,29 @@ def test_planner_uses_union_raster_coverage_without_double_counting() -> None:
 
     assert plan.pages[0].diagnostics.raster_image_coverage_ratio == 1.0
     assert plan.pages[0].action is OCRAction.RUN_OCR
+
+
+def test_planner_accepts_confident_fused_ocr_without_counting_it_as_native() -> None:
+    page = Page(
+        number=1,
+        width=400,
+        height=600,
+        regions=[
+            _image_region("scan", BoundingBox(0, 0, 400, 600)),
+            Region(
+                id="ocr-line",
+                type=RegionType.PARAGRAPH,
+                bbox=BoundingBox(40, 80, 360, 100),
+                source_text="Recognized academic text " * 5,
+                confidence=0.96,
+                metadata={"content_source": "paddleocr"},
+            ),
+        ],
+    )
+
+    plan = build_ocr_plan(Document(source_path="fixture.pdf", pages=[page]))
+
+    assert plan.pages[0].action is OCRAction.USE_OCR
+    assert plan.pages[0].diagnostics.native_character_count == 0
+    assert plan.pages[0].diagnostics.ocr_character_count > 80
+    assert plan.blocking_page_numbers == ()

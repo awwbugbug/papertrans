@@ -19,8 +19,9 @@ feature.
 
 ## Current milestone
 
-M6.1 is complete: a deterministic, model-free OCR preflight routes pages before provider calls
-without weakening M4.3 protection, M5.1 layout safety, or M5-C bounded translation context.
+M6.2 is complete: explicit local PaddleOCR runs only on scan candidates and fuses recognized
+geometry into the Document IR without weakening M4.3 protection, M5.1 layout safety, or M5-C
+bounded translation context.
 
 - Native extraction, reading order, TextFlow recovery, and the `roundtrip` command are available.
 - `translate --provider mock` supports CJK line breaking, cross-region flow, compact candidates,
@@ -65,19 +66,20 @@ without weakening M4.3 protection, M5.1 layout safety, or M5-C bounded translati
   with zero overflow, translated overlap, and protected overlap.
 - Whole-document prompts, vector retrieval, automatic terminology mining, and cross-segment
   provider batches remain deferred.
-- `ocr-plan.json` uses schema `m6_ocr_plan_v1` and routes pages to `keep_native`, `run_ocr`,
-  `review`, or `skip_blank` from native character count, text quality, raster coverage, and vector
-  drawing diagnostics. Every decision includes confidence and reason codes.
-- Native Region and TextFlow metadata preserve content source and confidence. Future OCR regions
-  must use a distinct source and retain engine confidence and geometry.
-- `run_ocr` and `review` are fail-closed for translation before provider execution. Existing
-  output PDFs must remain byte-for-byte unchanged; `document.json` and `ocr-plan.json` remain
-  inspectable.
-- Inspection overlays display the page OCR action. The four born-digital papers stay native, and
-  synthetic scan, mixed, blank, and vector-only pages cover all routing branches.
-- M6.1 does not execute OCR or download models. The next planned milestone is M6.2 local OCR
-  execution and Document IR fusion for `run_ocr` pages only. Follow the model download policy
-  before installing or loading any model weights.
+- `ocr-plan.json` uses schema `m6_ocr_plan_v2` and routes pages to `keep_native`, `run_ocr`,
+  `use_ocr`, `review`, or `skip_blank`. Every decision includes confidence and reason codes.
+- OCR is opt-in through `--ocr-backend paddleocr --ocr-model-dir <directory>`; the default path is
+  model-free, and native pages must cause zero OCR calls.
+- OCR Region and TextFlow metadata use `content_source=paddleocr` and retain engine confidence,
+  mapped PDF geometry, and the original recognized polygon.
+- `ocr-run.json` records only backend/device and aggregate page/line counts. It must never include
+  paper text, secrets, or absolute model paths.
+- PaddleOCR uses the local PP-OCRv6 medium detection and recognition directories. Do not enable
+  MKL-DNN on the Windows CPU baseline because PaddlePaddle 3.3.1 fails in its oneDNN PIR bridge.
+- Successful OCR pages become `use_ocr`; `run_ocr` and `review` remain fail-closed before provider
+  execution. Existing output PDFs must remain byte-for-byte unchanged on failure.
+- The next planned milestone is M6.3 OCR line-to-paragraph recovery and a real scanned-paper
+  quality baseline. Region-level mixed-page arbitration, table/formula OCR, and GUI remain deferred.
 
 When the milestone changes, update this section and the build-flow status in the same change.
 

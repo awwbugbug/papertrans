@@ -9,9 +9,9 @@ import pymupdf
 from papertrans.domain import Document, RegionType
 from papertrans.ingest import (
     OCRPlan,
+    OCRRuntimeConfig,
     annotate_document_with_ocr_plan,
-    build_ocr_plan,
-    extract_document,
+    prepare_document,
 )
 
 COLORS: dict[RegionType, tuple[float, float, float]] = {
@@ -39,6 +39,7 @@ class InspectionResult:
     ocr_plan_json: Path
     report_markdown: Path
     document: Document
+    ocr_run_json: Path | None = None
 
 
 def _render_pages(source_path: Path, document: Document, output_dir: Path) -> None:
@@ -114,7 +115,7 @@ def _write_report(document: Document, ocr_plan: OCRPlan, output_dir: Path) -> Pa
         f"- Source: `{document.source_path}`",
         f"- Pages: {len(document.pages)}",
         f"- Schema: `{document.schema_version}`",
-        "- Status: M6.1 native-first OCR routing; OCR execution is not enabled",
+        "- Status: M6.2 native-first routing with optional local PaddleOCR",
         f"- Text flows: {document.metadata.get('text_flow_stats', {}).get('flow_count', 0)}",
         "- Merged flows: "
         f"{document.metadata.get('text_flow_stats', {}).get('merged_flow_count', 0)}",
@@ -126,6 +127,7 @@ def _write_report(document: Document, ocr_plan: OCRPlan, output_dir: Path) -> Pa
         f"{document.metadata.get('text_flow_stats', {}).get('dehyphenation_count', 0)}",
         f"- Native pages: {ocr_plan.summary['keep_native_count']}",
         f"- OCR candidate pages: {ocr_plan.summary['run_ocr_count']}",
+        f"- OCR accepted pages: {ocr_plan.summary['use_ocr_count']}",
         f"- OCR review pages: {ocr_plan.summary['review_count']}",
         "",
         "## Page summary",
@@ -150,7 +152,7 @@ def _write_report(document: Document, ocr_plan: OCRPlan, output_dir: Path) -> Pa
             "- Figure and table captions use prefix rules; formula and reference detection "
             "are pending.",
             "- Cross-column headings and irregular magazine-style layouts are not solved yet.",
-            "- OCR candidates are detected, but no OCR engine is executed in M6.1.",
+            "- OCR is opt-in and only scan-like pages are sent to the local engine.",
             "",
         ]
     )
@@ -158,13 +160,19 @@ def _write_report(document: Document, ocr_plan: OCRPlan, output_dir: Path) -> Pa
     return report_path
 
 
-def inspect_pdf(source: str | Path, output_dir: str | Path) -> InspectionResult:
+def inspect_pdf(
+    source: str | Path,
+    output_dir: str | Path,
+    *,
+    ocr_config: OCRRuntimeConfig | None = None,
+) -> InspectionResult:
     source_path = Path(source).expanduser().resolve()
     resolved_output = Path(output_dir).expanduser().resolve()
     resolved_output.mkdir(parents=True, exist_ok=True)
 
-    document = extract_document(source_path)
-    ocr_plan = build_ocr_plan(document)
+    preparation = prepare_document(source_path, ocr_config)
+    document = preparation.document
+    ocr_plan = preparation.plan
     annotate_document_with_ocr_plan(document, ocr_plan)
     document_json = resolved_output / "document.json"
     document_json.write_text(
@@ -190,6 +198,11 @@ def inspect_pdf(source: str | Path, output_dir: str | Path) -> InspectionResult:
         json.dumps(ocr_plan.to_dict(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    ocr_run_json = resolved_output / "ocr-run.json"
+    ocr_run_json.write_text(
+        json.dumps(preparation.run.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     _render_pages(source_path, document, resolved_output)
     report = _write_report(document, ocr_plan, resolved_output)
     return InspectionResult(
@@ -199,4 +212,5 @@ def inspect_pdf(source: str | Path, output_dir: str | Path) -> InspectionResult:
         ocr_plan_json=ocr_plan_json,
         report_markdown=report,
         document=document,
+        ocr_run_json=ocr_run_json,
     )

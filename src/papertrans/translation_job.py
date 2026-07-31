@@ -10,9 +10,9 @@ from uuid import uuid4
 
 from papertrans.ingest import (
     OCRPreflightError,
+    OCRRuntimeConfig,
     annotate_document_with_ocr_plan,
-    build_ocr_plan,
-    extract_document,
+    prepare_document,
 )
 from papertrans.layout import build_cjk_layout, validate_layout
 from papertrans.qa import evaluate_roundtrip
@@ -80,6 +80,7 @@ class TranslationJobResult:
     layout_json: Path
     report_json: Path
     report: dict[str, Any]
+    ocr_run_json: Path | None = None
 
 
 def _default_cache_dir(output_dir: Path, provider_name: str) -> Path:
@@ -261,6 +262,7 @@ def run_translation_job(
     max_attempts: int = 3,
     requests_per_second: float = 0.0,
     glossary: Mapping[str, str] | None = None,
+    ocr_config: OCRRuntimeConfig | None = None,
 ) -> TranslationJobResult:
     source_path = Path(source).expanduser().resolve()
     resolved_output = Path(output_dir).expanduser().resolve()
@@ -269,8 +271,9 @@ def run_translation_job(
     output_pdf = resolved_output / "output.pdf"
     temporary_pdf = resolved_output / f".{uuid4().hex}.translation.tmp.pdf"
 
-    document = extract_document(source_path)
-    ocr_plan = build_ocr_plan(document)
+    preparation = prepare_document(source_path, ocr_config)
+    document = preparation.document
+    ocr_plan = preparation.plan
     annotate_document_with_ocr_plan(document, ocr_plan)
     document_json = resolved_output / "document.json"
     document_json.write_text(
@@ -280,6 +283,11 @@ def run_translation_job(
     ocr_plan_json = resolved_output / "ocr-plan.json"
     ocr_plan_json.write_text(
         json.dumps(ocr_plan.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    ocr_run_json = resolved_output / "ocr-run.json"
+    ocr_run_json.write_text(
+        json.dumps(preparation.run.to_dict(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     if ocr_plan.blocking_page_numbers:
@@ -478,6 +486,7 @@ def run_translation_job(
         output_dir=resolved_output,
         output_pdf=output_pdf,
         ocr_plan_json=ocr_plan_json,
+        ocr_run_json=ocr_run_json,
         protected_segments_json=protected_segments_json,
         provider_run_json=provider_run_json,
         translations_json=translations_json,

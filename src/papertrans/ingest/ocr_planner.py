@@ -8,12 +8,13 @@ from typing import Any
 
 from papertrans.domain import BoundingBox, Document, Page
 
-OCR_PLAN_SCHEMA_VERSION = "m6_ocr_plan_v1"
+OCR_PLAN_SCHEMA_VERSION = "m6_ocr_plan_v2"
 
 
 class OCRAction(StrEnum):
     KEEP_NATIVE = "keep_native"
     RUN_OCR = "run_ocr"
+    USE_OCR = "use_ocr"
     REVIEW = "review"
     SKIP_BLANK = "skip_blank"
 
@@ -24,6 +25,8 @@ class OCRPolicy:
     sparse_overlay_character_count: int = 12
     minimum_native_text_quality_ratio: float = 0.85
     scan_raster_coverage_ratio: float = 0.60
+    minimum_ocr_character_count: int = 40
+    minimum_ocr_confidence: float = 0.80
 
     def to_dict(self) -> dict[str, int | float]:
         return {
@@ -31,6 +34,8 @@ class OCRPolicy:
             "sparse_overlay_character_count": self.sparse_overlay_character_count,
             "minimum_native_text_quality_ratio": self.minimum_native_text_quality_ratio,
             "scan_raster_coverage_ratio": self.scan_raster_coverage_ratio,
+            "minimum_ocr_character_count": self.minimum_ocr_character_count,
+            "minimum_ocr_confidence": self.minimum_ocr_confidence,
         }
 
 
@@ -41,6 +46,9 @@ class OCRPageDiagnostics:
     native_text_quality_ratio: float
     raster_image_coverage_ratio: float
     native_drawing_count: int
+    ocr_character_count: int
+    ocr_text_region_count: int
+    ocr_mean_confidence: float
 
     def to_dict(self) -> dict[str, int | float]:
         return {
@@ -49,6 +57,9 @@ class OCRPageDiagnostics:
             "native_text_quality_ratio": round(self.native_text_quality_ratio, 4),
             "raster_image_coverage_ratio": round(self.raster_image_coverage_ratio, 4),
             "native_drawing_count": self.native_drawing_count,
+            "ocr_character_count": self.ocr_character_count,
+            "ocr_text_region_count": self.ocr_text_region_count,
+            "ocr_mean_confidence": round(self.ocr_mean_confidence, 4),
         }
 
 
@@ -74,6 +85,7 @@ class OCRPageDecision:
 class OCRPlan:
     policy: OCRPolicy
     pages: tuple[OCRPageDecision, ...]
+    ocr_backend: str | None = None
 
     @property
     def blocking_page_numbers(self) -> tuple[int, ...]:
@@ -91,6 +103,7 @@ class OCRPlan:
                 page.action is OCRAction.KEEP_NATIVE for page in self.pages
             ),
             "run_ocr_count": sum(page.action is OCRAction.RUN_OCR for page in self.pages),
+            "use_ocr_count": sum(page.action is OCRAction.USE_OCR for page in self.pages),
             "review_count": sum(page.action is OCRAction.REVIEW for page in self.pages),
             "skip_blank_count": sum(
                 page.action is OCRAction.SKIP_BLANK for page in self.pages
@@ -102,7 +115,7 @@ class OCRPlan:
         return {
             "schema_version": OCR_PLAN_SCHEMA_VERSION,
             "mode": "native_first_page_selection",
-            "ocr_backend": None,
+            "ocr_backend": self.ocr_backend,
             "policy": self.policy.to_dict(),
             "summary": self.summary,
             "pages": [page.to_dict() for page in self.pages],
@@ -119,11 +132,14 @@ class OCRPreflightError(RuntimeError):
 def build_ocr_plan(
     document: Document,
     policy: OCRPolicy | None = None,
+    *,
+    ocr_backend: str | None = None,
 ) -> OCRPlan:
     resolved_policy = policy or OCRPolicy()
     return OCRPlan(
         policy=resolved_policy,
         pages=tuple(_decide_page(page, resolved_policy) for page in document.pages),
+        ocr_backend=ocr_backend,
     )
 
 
@@ -144,7 +160,18 @@ def _decide_page(page: Page, policy: OCRPolicy) -> OCRPageDecision:
     )
     scan_like = diagnostics.raster_image_coverage_ratio >= policy.scan_raster_coverage_ratio
 
-    if diagnostics.native_character_count and not quality_is_reliable:
+    if (
+        diagnostics.ocr_character_count >= policy.minimum_ocr_character_count
+        and diagnostics.ocr_mean_confidence >= policy.minimum_ocr_confidence
+    ):
+        action = OCRAction.USE_OCR
+        reason = "confident_local_ocr"
+        confidence = diagnostics.ocr_mean_confidence
+    elif diagnostics.ocr_character_count:
+        action = OCRAction.REVIEW
+        reason = "insufficient_local_ocr"
+        confidence = diagnostics.ocr_mean_confidence
+    elif diagnostics.native_character_count and not quality_is_reliable:
         action = OCRAction.RUN_OCR if scan_like else OCRAction.REVIEW
         reason = "unreliable_native_text"
         confidence = 0.9 if scan_like else 0.7
@@ -188,7 +215,16 @@ def _decide_page(page: Page, policy: OCRPolicy) -> OCRPageDecision:
 
 
 def _diagnose_page(page: Page) -> OCRPageDiagnostics:
-    text_regions = [region for region in page.regions if region.source_text]
+    text_regions = [
+        region
+        for region in page.regions
+        if region.source_text and region.metadata.get("content_source") == "native_pdf"
+    ]
+    ocr_regions = [
+        region
+        for region in page.regions
+        if region.source_text and region.metadata.get("content_source") == "paddleocr"
+    ]
     characters = [
         character
         for region in text_regions
@@ -197,6 +233,17 @@ def _diagnose_page(page: Page) -> OCRPageDiagnostics:
     ]
     acceptable = sum(_is_acceptable_native_character(character) for character in characters)
     text_quality = acceptable / len(characters) if characters else 1.0
+    ocr_characters = [
+        character
+        for region in ocr_regions
+        for character in region.source_text or ""
+        if not character.isspace()
+    ]
+    ocr_mean_confidence = (
+        sum(region.confidence for region in ocr_regions) / len(ocr_regions)
+        if ocr_regions
+        else 0.0
+    )
     raster_boxes = [
         region.bbox
         for region in page.regions
@@ -211,6 +258,9 @@ def _diagnose_page(page: Page) -> OCRPageDiagnostics:
         native_text_quality_ratio=text_quality,
         raster_image_coverage_ratio=_box_union_coverage(page, raster_boxes),
         native_drawing_count=max(0, drawing_count),
+        ocr_character_count=len(ocr_characters),
+        ocr_text_region_count=len(ocr_regions),
+        ocr_mean_confidence=ocr_mean_confidence,
     )
 
 

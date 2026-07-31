@@ -1,3 +1,13 @@
+from papertrans.ingest.ocr_execution import (
+    OCRBackend,
+    OCRLine,
+    OCRPreparationResult,
+    OCRRun,
+    OCRRuntimeConfig,
+    PaddleOCRBackend,
+    RenderedOCRPage,
+    prepare_document,
+)
 from papertrans.ingest.ocr_planner import (
     OCRAction,
     OCRPageDecision,
@@ -20,4 +30,12 @@ __all__ = [
     "annotate_document_with_ocr_plan",
     "build_ocr_plan",
     "extract_document",
+    "OCRBackend",
+    "OCRLine",
+    "OCRPreparationResult",
+    "OCRRun",
+    "OCRRuntimeConfig",
+    "PaddleOCRBackend",
+    "RenderedOCRPage",
+    "prepare_document",
 ]

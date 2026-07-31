@@ -92,7 +92,7 @@ def protected_boxes_by_page(document: Document) -> dict[int, list[Box]]:
         page.number: [
             (region.bbox.x0, region.bbox.y0, region.bbox.x1, region.bbox.y1)
             for region in page.regions
-            if not region.translatable
+            if not region.translatable and not region.metadata.get("ocr_background")
         ]
         for page in document.pages
     }

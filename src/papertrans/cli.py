@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from papertrans import __version__
+from papertrans.ingest import OCRRuntimeConfig
 from papertrans.inspect import inspect_pdf
 from papertrans.roundtrip import run_roundtrip
 from papertrans.translation import (
@@ -20,6 +21,50 @@ from papertrans.translation import (
 from papertrans.translation_job import run_translation_job
 
 _ENVIRONMENT_VARIABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _add_ocr_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--ocr-backend",
+        choices=("paddleocr",),
+        help="Opt in to selective local OCR for scan-like pages",
+    )
+    parser.add_argument(
+        "--ocr-model-dir",
+        type=Path,
+        help="Directory containing the extracted PP-OCRv6 detection and recognition models",
+    )
+    parser.add_argument(
+        "--ocr-device",
+        choices=("cpu", "gpu"),
+        default="cpu",
+        help="Local OCR inference device (default: cpu)",
+    )
+    parser.add_argument(
+        "--ocr-dpi",
+        type=int,
+        default=200,
+        help="Rasterization DPI for selected OCR pages (default: 200)",
+    )
+
+
+def _ocr_runtime_config(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> OCRRuntimeConfig | None:
+    if args.ocr_backend is None:
+        if args.ocr_model_dir is not None:
+            parser.error("--ocr-model-dir requires --ocr-backend paddleocr")
+        return None
+    if args.ocr_model_dir is None:
+        parser.error("--ocr-backend paddleocr requires --ocr-model-dir")
+    if not 72 <= args.ocr_dpi <= 600:
+        parser.error("--ocr-dpi must be between 72 and 600")
+    return OCRRuntimeConfig(
+        backend=args.ocr_backend,
+        model_dir=args.ocr_model_dir,
+        device=args.ocr_device,
+        dpi=args.ocr_dpi,
+    )
 
 
 class _SafeArgumentParser(argparse.ArgumentParser):
@@ -100,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Inspection artifact directory",
     )
+    _add_ocr_arguments(inspect_parser)
     roundtrip_parser = subparsers.add_parser(
         "roundtrip",
         help="Remove and redraw translatable source text without translation",
@@ -176,6 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Provider request rate; 0 disables rate limiting",
     )
+    _add_ocr_arguments(translate_parser)
     return parser
 
 
@@ -187,13 +234,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         source = args.input.expanduser().resolve()
         output = args.output_dir or _default_output(source, "inspect")
         try:
-            result = inspect_pdf(source, output)
+            result = inspect_pdf(source, output, ocr_config=_ocr_runtime_config(parser, args))
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             parser.error(str(exc))
         print(f"Inspection complete: {result.output_dir}")
         print(f"Document model:     {result.document_json}")
         print(f"Text flows:         {result.text_flows_json}")
         print(f"OCR plan:           {result.ocr_plan_json}")
+        if getattr(result, "ocr_run_json", None) is not None:
+            print(f"OCR run:            {result.ocr_run_json}")
         print(f"Inspection report:  {result.report_markdown}")
     elif args.command == "roundtrip":
         source = args.input.expanduser().resolve()
@@ -209,6 +258,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(f"Quality gate:       {status}")
     elif args.command == "translate":
         _validate_translate_args(parser, args)
+        ocr_config = _ocr_runtime_config(parser, args)
         source = args.input.expanduser().resolve()
         output = args.output_dir or _default_output(
             source, f"{args.provider}-translation"
@@ -237,6 +287,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 max_attempts=args.max_attempts,
                 requests_per_second=args.requests_per_second,
                 glossary=glossary,
+                ocr_config=ocr_config,
             )
         except BaseException as exc:
             primary_error = exc
@@ -268,6 +319,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 print(f"Review reasons:     {reasons}")
         print(f"Protected segments: {result.protected_segments_json}")
         print(f"OCR plan:           {result.ocr_plan_json}")
+        if getattr(result, "ocr_run_json", None) is not None:
+            print(f"OCR run:            {result.ocr_run_json}")
         print(f"Provider run:       {result.provider_run_json}")
         print(f"Translations:       {result.translations_json}")
         print(f"Layout:             {result.layout_json}")

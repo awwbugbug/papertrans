@@ -7,7 +7,7 @@ from typing import Any
 
 import pymupdf
 
-from papertrans.domain import Document
+from papertrans.domain import Document, Page, Region
 from papertrans.layout import DocumentLayout
 from papertrans.layout.cjk_font import CJKFontResolver
 
@@ -71,6 +71,17 @@ def _redaction_boxes(
     return pieces, cutouts
 
 
+def _source_redaction_box(region: Region, page: Page) -> tuple[float, float, float, float]:
+    padding_x = 2.0 if region.metadata.get("content_source") == "paddleocr" else 0.0
+    padding_y = 1.25 if region.metadata.get("content_source") == "paddleocr" else 0.0
+    return (
+        max(0.0, region.bbox.x0 - padding_x),
+        max(0.0, region.bbox.y0 - padding_y),
+        min(page.width, region.bbox.x1 + padding_x),
+        min(page.height, region.bbox.y1 + padding_y),
+    )
+
+
 def render_translated_layout(
     source_path: str | Path,
     document: Document,
@@ -117,12 +128,12 @@ def render_translated_layout(
                     region.bbox.y1 + 0.5,
                 )
                 for region in page_model.regions
-                if not region.translatable
+                if not region.translatable and not region.metadata.get("ocr_background")
             ]
             for region_id in sorted(region_ids & page_region_ids):
                 region = region_by_id[region_id]
                 boxes, cutouts = _redaction_boxes(
-                    (region.bbox.x0, region.bbox.y0, region.bbox.x1, region.bbox.y1),
+                    _source_redaction_box(region, page_model),
                     protected_boxes,
                 )
                 protected_cutouts += cutouts
