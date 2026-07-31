@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -253,6 +254,7 @@ def run_translation_job(
     cache_dir: str | Path | None = None,
     max_attempts: int = 3,
     requests_per_second: float = 0.0,
+    glossary: Mapping[str, str] | None = None,
 ) -> TranslationJobResult:
     source_path = Path(source).expanduser().resolve()
     resolved_output = Path(output_dir).expanduser().resolve()
@@ -302,6 +304,7 @@ def run_translation_job(
             document,
             reliable_provider,
             protected_segments=protected_segments,
+            glossary=glossary,
         )
     except Exception as exc:
         _write_provider_run(
@@ -439,6 +442,7 @@ def run_translation_job(
         "provider": provider.name,
         "provider_configuration": provider_configuration,
         "protection": translation_batch.stats,
+        "translation_context": translation_batch.context_stats.to_dict(),
         "provider_execution": reliable_provider.stats.to_dict(),
         "limitations": _report_limitations(provider.name),
         "layout": layout.stats,

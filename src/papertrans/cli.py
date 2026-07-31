@@ -15,6 +15,7 @@ from papertrans.translation import (
     CloseableTranslationProvider,
     TranslationProvider,
     create_translation_provider,
+    load_glossary,
 )
 from papertrans.translation_job import run_translation_job
 
@@ -159,6 +160,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Persistent provider cache directory",
     )
     translate_parser.add_argument(
+        "--glossary",
+        type=Path,
+        help="Optional UTF-8 JSON object mapping source terms to Chinese terms",
+    )
+    translate_parser.add_argument(
         "--max-attempts",
         type=int,
         default=3,
@@ -210,6 +216,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         result = None
         primary_error: BaseException | None = None
         try:
+            glossary = load_glossary(args.glossary) if args.glossary is not None else {}
             provider = create_translation_provider(
                 args.provider,
                 model=args.model,
@@ -228,6 +235,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 cache_dir=args.cache_dir,
                 max_attempts=args.max_attempts,
                 requests_per_second=args.requests_per_second,
+                glossary=glossary,
             )
         except BaseException as exc:
             primary_error = exc

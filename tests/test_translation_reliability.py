@@ -99,6 +99,29 @@ def test_provider_configuration_fingerprint_separates_cache_entries(tmp_path: Pa
     assert second_provider.calls == ["s1", "s2"]
 
 
+def test_translation_context_separates_cache_entries(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    first_provider = _CountingProvider()
+    first_request = TranslationRequest(
+        segment_id="s1",
+        text="source",
+        context={"section_title": "Methods"},
+    )
+    ReliableTranslationProvider(first_provider, cache_dir).translate([first_request])
+
+    second_provider = _CountingProvider()
+    changed_context = TranslationRequest(
+        segment_id="s1",
+        text="source",
+        context={"section_title": "Results"},
+    )
+    reliable = ReliableTranslationProvider(second_provider, cache_dir)
+    reliable.translate([changed_context])
+
+    assert reliable.stats.cache_hits == 0
+    assert second_provider.calls == ["s1"]
+
+
 class _FlakyProvider(_CountingProvider):
     name = "flaky"
 

@@ -92,3 +92,69 @@ def test_restore_reports_duplicate_and_unknown_placeholders() -> None:
     assert validation.passed is False
     assert validation.duplicated == (placeholder,)
     assert validation.unknown == ("⟦PT9999⟧",)
+
+
+def test_pipeline_passes_bounded_context_and_relevant_glossary_to_provider() -> None:
+    class CapturingProvider:
+        name = "capturing"
+
+        def __init__(self) -> None:
+            self.requests: list[TranslationRequest] = []
+
+        def translate(self, requests: list[TranslationRequest]) -> list[TranslationResult]:
+            self.requests.extend(requests)
+            return [
+                TranslationResult(
+                    segment_id=request.segment_id,
+                    normal=request.text,
+                    compact=request.text,
+                    provider=self.name,
+                )
+                for request in requests
+            ]
+
+    flows = [
+        TextFlow(
+            id="heading",
+            type=RegionType.HEADING,
+            region_ids=["heading-region"],
+            page_numbers=[1],
+            raw_text="2. Methods",
+            source_text="2. Methods",
+            translatable=True,
+        ),
+        TextFlow(
+            id="first",
+            type=RegionType.PARAGRAPH,
+            region_ids=["first-region"],
+            page_numbers=[1],
+            raw_text="A region proposal is generated.",
+            source_text="A region proposal is generated.",
+            translatable=True,
+        ),
+        TextFlow(
+            id="second",
+            type=RegionType.PARAGRAPH,
+            region_ids=["second-region"],
+            page_numbers=[1],
+            raw_text="The detector consumes it.",
+            source_text="The detector consumes it.",
+            translatable=True,
+        ),
+    ]
+    provider = CapturingProvider()
+
+    batch = translate_text_flows_with_protection(
+        Document(source_path="fixture.pdf", text_flows=flows),
+        provider,
+        glossary={"region proposal": "候选区域", "detector": "检测器"},
+    )
+
+    request_by_id = {request.segment_id: request for request in provider.requests}
+    assert request_by_id["first"].context["section_title"] == "2. Methods"
+    assert request_by_id["first"].context["previous_text"] == "2. Methods"
+    assert request_by_id["first"].context["next_text"] == "The detector consumes it."
+    assert request_by_id["first"].context["glossary"] == [
+        {"source": "region proposal", "target": "候选区域"}
+    ]
+    assert batch.context_stats.glossary_term_count == 2

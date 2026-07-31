@@ -19,8 +19,8 @@ feature.
 
 ## Current milestone
 
-M5.1 is complete: deterministic bounded layout repair is protected by an independent fail-closed
-layout validation pass.
+M5-C is complete: provider requests now receive deterministic, bounded section, neighbor, and
+optional glossary context without weakening M4.3 protection or M5.1 fail-closed layout behavior.
 
 - Native extraction, reading order, TextFlow recovery, and the `roundtrip` command are available.
 - `translate --provider mock` supports CJK line breaking, cross-region flow, compact candidates,
@@ -52,9 +52,21 @@ layout validation pass.
   all existing PDF quality gates pass; failed runs preserve any previous output byte-for-byte.
 - The four-paper normal baseline and Fast R-CNN 1.3x scenario pass with zero overflow, translated
   overlap, protected overlap, or newly introduced sub-6pt text.
-- The next planned milestone is M5-C translation context enhancement. Page-level global search is
-  deferred until a recorded failure corpus proves bounded local repair is insufficient.
-- OCR, model downloads, and GUI work remain out of scope for M5-C.
+- Context schema `m5c_v1` supplies at most a 200-character active heading and 600 characters from
+  each immediate translatable neighbor. Distant paragraphs never enter the same request.
+- `--glossary` accepts a validated UTF-8 JSON object with at most 500 entries and sends only terms
+  present in the current segment. Glossary paths and full glossary content are not persisted in
+  reports.
+- Prompt version `academic_pdf_zh_v2` makes the current-segment boundary explicit. Context and
+  relevant glossary entries participate in existing hash cache keys without entering cache
+  metadata as plaintext.
+- `translation-report.json` records aggregate context coverage and clipping counts only.
+- A real-paper offline Mock run covers 117 contextualized flows and passes the existing PDF gates
+  with zero overflow, translated overlap, and protected overlap.
+- Whole-document prompts, vector retrieval, automatic terminology mining, and cross-segment
+  provider batches remain deferred.
+- The next planned milestone is M6 selective OCR for pages or regions without a reliable text
+  layer. Do not download any OCR model before following the repository model download policy.
 
 When the milestone changes, update this section and the build-flow status in the same change.
 

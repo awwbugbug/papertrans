@@ -14,6 +14,7 @@ def test_translate_defaults_to_mock_without_api_key_argument() -> None:
     assert args.model is None
     assert args.base_url is None
     assert args.api_key_env is None
+    assert args.glossary is None
     option_strings = {
         option
         for action in parser._subparsers._group_actions[0].choices[
@@ -370,6 +371,72 @@ def test_main_reports_review_without_claiming_output_pdf(
     assert "Output PDF:         not created or replaced" in stdout
     assert "Review reasons:     overflow" in stdout
     assert "Quality gate:       REVIEW" in stdout
+
+
+def test_main_loads_glossary_before_provider_and_passes_terms_to_job(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    glossary_path = tmp_path / "glossary.json"
+    glossary_path.write_text(
+        '{"region proposal": "候选区域"}',
+        encoding="utf-8",
+    )
+    output = tmp_path / "output"
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "papertrans.cli.create_translation_provider",
+        lambda *args, **kwargs: object(),
+    )
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            output_dir=output,
+            output_pdf=output / "output.pdf",
+            protected_segments_json=output / "protected-segments.json",
+            provider_run_json=output / "provider-run.json",
+            translations_json=output / "translations.json",
+            layout_json=output / "layout.json",
+            report_json=output / "translation-report.json",
+            report={"passed": True},
+        )
+
+    monkeypatch.setattr("papertrans.cli.run_translation_job", fake_run)
+
+    main(
+        [
+            "translate",
+            "paper.pdf",
+            "--glossary",
+            str(glossary_path),
+            "--output-dir",
+            str(output),
+        ]
+    )
+
+    assert captured["glossary"] == {"region proposal": "候选区域"}
+
+
+def test_main_rejects_invalid_glossary_before_provider_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("[]", encoding="utf-8")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "papertrans.cli.create_translation_provider",
+        lambda *args, **kwargs: calls.append("provider"),
+    )
+
+    with pytest.raises(SystemExit):
+        main(["translate", "paper.pdf", "--glossary", str(invalid)])
+
+    assert "Invalid glossary file" in capsys.readouterr().err
+    assert calls == []
 
 
 def test_main_dispatches_selected_provider_to_generic_job(

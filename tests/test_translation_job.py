@@ -68,6 +68,16 @@ def test_generic_job_writes_provider_neutral_artifacts_and_resumes(tmp_path: Pat
     assert first.report_json.name == "translation-report.json"
     assert first.report["provider"] == "deterministic"
     assert first.report["mode"] == "translated_pdf"
+    assert first.report["translation_context"] == {
+        "schema_version": "m5c_v1",
+        "flow_count": 1,
+        "section_title_count": 0,
+        "previous_context_count": 0,
+        "next_context_count": 0,
+        "glossary_term_count": 0,
+        "clipped_heading_count": 0,
+        "clipped_neighbor_count": 0,
+    }
     assert any("deterministic" in item for item in first.report["limitations"])
     assert first.report["gates"]["provider_execution_completed"] is True
     assert first_provider.calls

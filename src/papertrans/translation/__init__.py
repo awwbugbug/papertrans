@@ -6,6 +6,11 @@ from papertrans.translation.base import (
     TranslationUsage,
 )
 from papertrans.translation.compatible_client import ChatCompletionsTranslationProvider
+from papertrans.translation.context import (
+    TranslationContextStats,
+    build_translation_contexts,
+    load_glossary,
+)
 from papertrans.translation.deepseek import DeepSeekTranslationProvider
 from papertrans.translation.kimi import KimiTranslationProvider
 from papertrans.translation.mock import MockTranslationProvider
@@ -55,10 +60,13 @@ __all__ = [
     "RetryableProviderError",
     "RetryPolicy",
     "TranslationProvider",
+    "TranslationContextStats",
     "TranslationRequest",
     "TranslationResult",
     "TranslationUsage",
     "create_translation_provider",
+    "build_translation_contexts",
+    "load_glossary",
     "placeholder_issues",
     "protect_text_flows",
     "translate_text_flows",

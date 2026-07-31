@@ -42,19 +42,35 @@ def test_prompt_is_versioned_and_carries_only_limited_segment_context() -> None:
         segment_id="flow-1",
         text="See 鉄T0001鉄?in 10 ms.",
         protected_tokens=("鉄T0001鉄?", "鉄T0002鉄?"),
-        context={"region_type": "paragraph"},
+        context={
+            "schema_version": "m5c_v1",
+            "region_type": "paragraph",
+            "section_title": "Methods",
+            "previous_text": "Previous paragraph.",
+            "next_text": "Next paragraph.",
+            "glossary": [{"source": "proposal", "target": "候选区域"}],
+        },
     )
     messages = build_chat_messages(request)
     payload = json.loads(messages[1]["content"])
-    assert PROMPT_VERSION == "academic_pdf_zh_v1"
+    assert PROMPT_VERSION == "academic_pdf_zh_v2"
     assert [message["role"] for message in messages] == ["system", "user"]
     assert payload == {
         "source_language": "en",
         "target_language": "zh-CN",
-        "region_type": "paragraph",
         "protected_tokens": ["鉄T0001鉄?", "鉄T0002鉄?"],
+        "segment_context": {
+            "glossary": [{"source": "proposal", "target": "候选区域"}],
+            "next_text": "Next paragraph.",
+            "previous_text": "Previous paragraph.",
+            "region_type": "paragraph",
+            "schema_version": "m5c_v1",
+            "section_title": "Methods",
+        },
         "source_text": "See 鉄T0001鉄?in 10 ms.",
     }
     assert "normal" in messages[0]["content"]
     assert "compact" in messages[0]["content"]
     assert "JSON" in messages[0]["content"]
+    assert "current segment" in messages[0]["content"]
+    assert "neighboring context" in messages[0]["content"]

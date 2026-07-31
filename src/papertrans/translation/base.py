@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True, slots=True)
@@ -11,7 +11,7 @@ class TranslationRequest:
     source_language: str = "en"
     target_language: str = "zh-CN"
     protected_tokens: tuple[str, ...] = ()
-    context: dict[str, str] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

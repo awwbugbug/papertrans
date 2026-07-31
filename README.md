@@ -2,7 +2,7 @@
 
 PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目标不是简单地提取文字并覆盖回 PDF，而是建立可检查的文档中间表示，恢复阅读顺序，并在可读性约束下尽量保持原页面结构。
 
-当前版本已完成 **M5.1 版式安全验证与有限局部修复基线**：现有 CJK 排版会依次尝试普通译文、紧凑译文和受控字号回退，再由独立验证器复查完整性、页边界、字号及碰撞；不安全结果进入 REVIEW，且不会创建或覆盖输出 PDF。M4.3 的 DeepSeek、Kimi 和自定义 OpenAI-compatible 接入保持不变。`mock` 仍是默认提供方且完全离线；模拟中文只用于检验管线和排版，不代表真实翻译质量。
+当前版本已完成 **M5-C 受限翻译语境增强基线**：每个段落请求可携带受字符上限约束的章节标题、前后相邻段落和当前段命中的可选术语表，同时保留 M5.1 的有限局部修复与失败不覆盖输出。M4.3 的 DeepSeek、Kimi 和自定义 OpenAI-compatible 接入保持不变。`mock` 仍是默认提供方且完全离线；模拟中文只用于检验管线和排版，不代表真实翻译质量。
 
 ## 当前能力
 
@@ -28,6 +28,8 @@ PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目�
 - 输出 `provider-run.json`，记录缓存命中、真实调用、重试、失败及限速等待统计。
 - 支持显式选择 `deepseek`、`kimi` 和 best-effort 的 `compatible` 提供方；一次 JSON 响应同时返回普通译文与紧凑译文。
 - 对 DeepSeek/Kimi 的新调用记录输入、缓存输入、输出令牌和按日期快照估算的费用；本地缓存命中不重复计费。
+- 每个段落请求最多携带 200 字符章节标题及前后各 600 字符相邻文本，不会把整份 PDF 作为单次请求上传。
+- 支持 `--glossary` JSON 术语表；只发送当前段命中的术语，语境与术语变化会自动隔离缓存。
 
 ## 本地开发
 
@@ -76,6 +78,21 @@ python -m venv .venv
 ```powershell
 .\.venv\Scripts\papertrans translate .\paper.pdf --provider mock --cache-dir .\.papertrans\cache\mock --max-attempts 3 --requests-per-second 2
 ```
+
+使用可选术语表：
+
+```json
+{
+  "region proposal": "候选区域",
+  "intersection over union": "交并比"
+}
+```
+
+```powershell
+.\.venv\Scripts\papertrans translate .\paper.pdf --provider deepseek --glossary .\glossary.json
+```
+
+术语表必须是 UTF-8 JSON 对象，最多 500 项；路径和完整术语内容不会写入任务报告。
 
 ### 外部翻译提供方
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -8,6 +9,10 @@ from papertrans.translation.base import (
     TranslationProvider,
     TranslationRequest,
     TranslationResult,
+)
+from papertrans.translation.context import (
+    TranslationContextStats,
+    build_translation_contexts,
 )
 from papertrans.translation.protection import (
     ProtectedSegment,
@@ -23,6 +28,7 @@ class ProtectedTranslationBatch:
     translations: dict[str, TranslationResult]
     segments: dict[str, ProtectedSegment]
     validations: tuple[ProtectionValidation, ...]
+    context_stats: TranslationContextStats
 
     @property
     def stats(self) -> dict[str, Any]:
@@ -45,12 +51,14 @@ def translate_text_flows(
     provider: TranslationProvider,
     source_language: str = "en",
     target_language: str = "zh-CN",
+    glossary: Mapping[str, str] | None = None,
 ) -> dict[str, TranslationResult]:
     return translate_text_flows_with_protection(
         document,
         provider,
         source_language=source_language,
         target_language=target_language,
+        glossary=glossary,
     ).translations
 
 
@@ -68,9 +76,10 @@ def translate_text_flows_with_protection(
     source_language: str = "en",
     target_language: str = "zh-CN",
     protected_segments: dict[str, ProtectedSegment] | None = None,
+    glossary: Mapping[str, str] | None = None,
 ) -> ProtectedTranslationBatch:
-    flow_by_id = {flow.id: flow for flow in document.text_flows}
     segments = protected_segments or protect_text_flows(document)
+    contexts, context_stats = build_translation_contexts(document, glossary)
     requests = [
         TranslationRequest(
             segment_id=segment.segment_id,
@@ -78,9 +87,7 @@ def translate_text_flows_with_protection(
             source_language=source_language,
             target_language=target_language,
             protected_tokens=tuple(token.placeholder for token in segment.tokens),
-            context={
-                "region_type": flow_by_id[segment.segment_id].type.value,
-            },
+            context=contexts[segment.segment_id],
         )
         for segment in segments.values()
     ]
@@ -116,4 +123,5 @@ def translate_text_flows_with_protection(
         translations=restored_results,
         segments=segments,
         validations=tuple(validations),
+        context_stats=context_stats,
     )
