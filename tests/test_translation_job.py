@@ -6,6 +6,7 @@ import pytest
 
 from papertrans.translation import (
     NonRetryableProviderError,
+    ProtectedTokenError,
     ProviderExecutionError,
     TranslationRequest,
     TranslationResult,
@@ -19,6 +20,7 @@ class DeterministicProvider:
         "provider": "deterministic",
         "version": "v1",
         "accounting": {"input_tokens": 0, "max_output_tokens": 1024},
+        "base_url": "https://api.example.test/v1",
     }
 
     def __init__(self) -> None:
@@ -106,6 +108,58 @@ def test_job_rejects_nested_secret_bearing_cache_identity_before_writing(
     assert not output_dir.exists()
 
 
+@pytest.mark.parametrize(
+    "secret_field",
+    ["clientSecret", "accessToken", "privateKey", "apiKey", "dbPassword"],
+)
+def test_job_rejects_camel_case_secret_fields_without_persisting_them(
+    tmp_path: Path,
+    secret_field: str,
+) -> None:
+    sentinel = "sentinel-secret-value"
+    provider = DeterministicProvider()
+    provider.cache_identity = {
+        "provider": provider.name,
+        "nested": [{secret_field: sentinel}],
+    }
+    output_dir = tmp_path / "output"
+
+    with pytest.raises(ValueError, match="secret-bearing") as exc_info:
+        run_translation_job(tmp_path / "missing.pdf", output_dir, provider)
+
+    assert secret_field not in str(exc_info.value)
+    assert sentinel not in str(exc_info.value)
+    assert not (output_dir / "provider-run.json").exists()
+    assert not (output_dir / "translation-report.json").exists()
+
+
+@pytest.mark.parametrize(
+    "secret_value",
+    [
+        "Bearer sentinel-secret-value",
+        "sk-sentinel-secret-value",
+        "api-key-sentinel-secret-value",
+    ],
+)
+def test_job_rejects_high_confidence_secret_values_without_persisting_them(
+    tmp_path: Path,
+    secret_value: str,
+) -> None:
+    provider = DeterministicProvider()
+    provider.cache_identity = {
+        "provider": provider.name,
+        "metadata": [{"label": secret_value}],
+    }
+    output_dir = tmp_path / "output"
+
+    with pytest.raises(ValueError, match="secret-bearing") as exc_info:
+        run_translation_job(tmp_path / "missing.pdf", output_dir, provider)
+
+    assert secret_value not in str(exc_info.value)
+    assert not (output_dir / "provider-run.json").exists()
+    assert not (output_dir / "translation-report.json").exists()
+
+
 def test_failed_job_writes_only_sanitized_provider_error_summary(tmp_path: Path) -> None:
     class FailingProvider(DeterministicProvider):
         name = "failing"
@@ -172,3 +226,43 @@ def test_failed_job_drops_untrusted_http_status_text(tmp_path: Path) -> None:
         "http_status": None,
     }
     assert sentinel not in json.dumps(provider_run)
+
+
+def test_protection_failure_writes_sanitized_terminal_manifest(tmp_path: Path) -> None:
+    class ProtectionInvalidProvider(DeterministicProvider):
+        name = "protection-invalid"
+        cache_identity = {"provider": "protection-invalid", "version": "v1"}
+
+        def translate(
+            self,
+            requests: list[TranslationRequest],
+        ) -> list[TranslationResult]:
+            request = requests[0]
+            return [
+                TranslationResult(
+                    segment_id=request.segment_id,
+                    normal="译文丢失了保护标记",
+                    compact="紧凑译文也丢失了保护标记",
+                    provider=self.name,
+                )
+            ]
+
+    source = tmp_path / "fixture.pdf"
+    output_dir = tmp_path / "failed"
+    _create_fixture(source)
+
+    with pytest.raises(ProtectedTokenError):
+        run_translation_job(source, output_dir, ProtectionInvalidProvider())
+
+    provider_run = json.loads(
+        (output_dir / "provider-run.json").read_text(encoding="utf-8")
+    )
+    assert provider_run["status"] == "failed"
+    assert provider_run["stats"]["provider_calls"] == 1
+    assert provider_run["error"] == {
+        "segment_id": "flow-p1-text-0",
+        "attempts": None,
+        "error_type": "protected_token_error",
+        "http_status": None,
+    }
+    assert not (output_dir / "output.pdf").exists()

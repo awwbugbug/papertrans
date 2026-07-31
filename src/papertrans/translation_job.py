@@ -13,6 +13,7 @@ from papertrans.qa import evaluate_roundtrip
 from papertrans.render import render_translated_layout
 from papertrans.translation import (
     ProtectedSegment,
+    ProtectedTokenError,
     ProtectionValidation,
     ProviderExecutionError,
     ReliableTranslationProvider,
@@ -22,29 +23,24 @@ from papertrans.translation import (
     translate_text_flows_with_protection,
 )
 
-_SECRET_FIELD_NAMES = {
-    "api_key",
+_SECRET_FIELD_MARKERS = {
+    "accesstoken",
     "apikey",
-    "access_token",
-    "auth_token",
+    "authtoken",
     "authorization",
-    "bearer_token",
+    "bearertoken",
     "credential",
-    "credentials",
     "passphrase",
     "password",
-    "private_key",
-    "refresh_token",
+    "privatekey",
+    "refreshtoken",
     "secret",
 }
-_SECRET_FIELD_PARTS = {
-    "authorization",
-    "credential",
-    "credentials",
-    "passphrase",
-    "password",
-    "secret",
-}
+_SECRET_VALUE_PATTERNS = (
+    re.compile(r"Bearer\s+\S{8,}", re.IGNORECASE),
+    re.compile(r"sk-[a-z0-9_-]{8,}", re.IGNORECASE),
+    re.compile(r"api[-_]?key(?:[-_:][a-z0-9_-]+)+", re.IGNORECASE),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,16 +79,8 @@ def _provider_configuration(provider: TranslationProvider) -> dict[str, Any]:
 def _reject_secret_bearing_fields(value: Any) -> None:
     if isinstance(value, dict):
         for field_name, nested in value.items():
-            normalized = re.sub(r"[^a-z0-9]+", "_", field_name.lower()).strip("_")
-            parts = normalized.split("_")
-            if (
-                normalized in _SECRET_FIELD_NAMES
-                or _SECRET_FIELD_PARTS.intersection(parts)
-                or any(
-                    left == "api" and right == "key"
-                    for left, right in zip(parts, parts[1:], strict=False)
-                )
-            ):
+            normalized = re.sub(r"[^a-z0-9]", "", field_name.lower())
+            if any(marker in normalized for marker in _SECRET_FIELD_MARKERS):
                 raise ValueError(
                     "Provider cache_identity contains a secret-bearing field name"
                 )
@@ -100,12 +88,51 @@ def _reject_secret_bearing_fields(value: Any) -> None:
     elif isinstance(value, list):
         for nested in value:
             _reject_secret_bearing_fields(nested)
+    elif isinstance(value, str) and any(
+        pattern.fullmatch(value.strip()) for pattern in _SECRET_VALUE_PATTERNS
+    ):
+        raise ValueError("Provider cache_identity contains a secret-bearing value")
 
 
 def _sanitized_http_status(value: object) -> int | None:
     if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599:
         return value
     return None
+
+
+def _sanitized_segment_id(value: object) -> str | None:
+    if isinstance(value, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}", value):
+        return value
+    return None
+
+
+def _sanitized_attempts(value: object) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
+
+
+def _execution_error_summary(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, ProviderExecutionError):
+        return {
+            "segment_id": _sanitized_segment_id(exc.segment_id),
+            "attempts": _sanitized_attempts(exc.attempts),
+            "error_type": exc.error_type,
+            "http_status": _sanitized_http_status(exc.http_status),
+        }
+    if isinstance(exc, ProtectedTokenError):
+        return {
+            "segment_id": _sanitized_segment_id(exc.validation.segment_id),
+            "attempts": None,
+            "error_type": "protected_token_error",
+            "http_status": None,
+        }
+    return {
+        "segment_id": None,
+        "attempts": None,
+        "error_type": "translation_execution_error",
+        "http_status": None,
+    }
 
 
 def _write_provider_run(
@@ -250,7 +277,7 @@ def run_translation_job(
             reliable_provider,
             protected_segments=protected_segments,
         )
-    except ProviderExecutionError as exc:
+    except Exception as exc:
         _write_provider_run(
             provider_run_json,
             status="failed",
@@ -260,14 +287,11 @@ def run_translation_job(
             retry_policy=retry_policy,
             requests_per_second=requests_per_second,
             stats=reliable_provider.stats.to_dict(),
-            error={
-                "segment_id": exc.segment_id,
-                "attempts": exc.attempts,
-                "error_type": exc.error_type,
-                "http_status": _sanitized_http_status(exc.http_status),
-            },
+            error=_execution_error_summary(exc),
         )
-        raise
+        if isinstance(exc, (ProviderExecutionError, ProtectedTokenError)):
+            raise
+        raise RuntimeError("Translation execution failed") from None
     _write_provider_run(
         provider_run_json,
         status="completed",
