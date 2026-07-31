@@ -110,6 +110,7 @@ def translate_text_flows_with_protection(
             normal=normal,
             compact=compact,
             provider=result.provider,
+            usage=result.usage,
         )
     return ProtectedTranslationBatch(
         translations=restored_results,

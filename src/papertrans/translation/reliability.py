@@ -13,6 +13,7 @@ from papertrans.translation.base import (
     TranslationProvider,
     TranslationRequest,
     TranslationResult,
+    TranslationUsage,
 )
 
 
@@ -45,6 +46,42 @@ class ProviderRunStats:
     retry_count: int = 0
     failure_count: int = 0
     rate_limit_sleep_seconds: float = 0.0
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+    currency: str | None = None
+    pricing_snapshot: str | None = None
+    _usage_count: int = 0
+    _estimated_cost: float = 0.0
+    _cost_is_complete: bool = True
+
+    def add_usage(self, usage: TranslationUsage | None) -> None:
+        if usage is None:
+            return
+        if (
+            self.currency is not None
+            and usage.currency is not None
+            and self.currency != usage.currency
+        ):
+            raise ValueError("Cannot merge provider usage with different currencies")
+        if (
+            self.pricing_snapshot is not None
+            and usage.pricing_snapshot is not None
+            and self.pricing_snapshot != usage.pricing_snapshot
+        ):
+            raise ValueError("Cannot merge provider usage with different pricing snapshots")
+        if usage.currency is not None:
+            self.currency = usage.currency
+        if usage.pricing_snapshot is not None:
+            self.pricing_snapshot = usage.pricing_snapshot
+        self.input_tokens += usage.input_tokens
+        self.cached_input_tokens += usage.cached_input_tokens
+        self.output_tokens += usage.output_tokens
+        self._usage_count += 1
+        if usage.estimated_cost is None:
+            self._cost_is_complete = False
+        else:
+            self._estimated_cost += usage.estimated_cost
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,22 +94,55 @@ class ProviderRunStats:
             "retry_count": self.retry_count,
             "failure_count": self.failure_count,
             "rate_limit_sleep_seconds": round(self.rate_limit_sleep_seconds, 3),
+            "usage": {
+                "input_tokens": self.input_tokens,
+                "cached_input_tokens": self.cached_input_tokens,
+                "uncached_input_tokens": self.input_tokens - self.cached_input_tokens,
+                "output_tokens": self.output_tokens,
+                "estimated_cost": (
+                    self._estimated_cost
+                    if self._usage_count > 0 and self._cost_is_complete
+                    else None
+                ),
+                "currency": self.currency,
+                "pricing_snapshot": self.pricing_snapshot,
+            },
             "completed": self.failure_count == 0,
         }
 
 
-class NonRetryableProviderError(RuntimeError):
-    """A provider error that should fail immediately, such as invalid credentials."""
+class ProviderError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        error_type: str,
+        http_status: int | None = None,
+        usage: TranslationUsage | None = None,
+    ) -> None:
+        self.error_type = error_type
+        self.http_status = http_status
+        self.usage = usage
+        super().__init__(error_type)
+
+
+class RetryableProviderError(ProviderError):
+    pass
+
+
+class NonRetryableProviderError(ProviderError):
+    pass
 
 
 class ProviderExecutionError(RuntimeError):
     def __init__(self, segment_id: str, attempts: int, cause: Exception) -> None:
         self.segment_id = segment_id
         self.attempts = attempts
-        self.cause_type = type(cause).__name__
+        self.error_type = getattr(cause, "error_type", type(cause).__name__)
+        self.http_status = getattr(cause, "http_status", None)
+        self.cause_type = self.error_type
         super().__init__(
-            f"Translation provider failed for segment {segment_id} after {attempts} attempt(s) "
-            f"with {self.cause_type}"
+            f"Translation provider failed for segment {segment_id} after {attempts} "
+            f"attempt(s): {self.error_type}"
         )
 
 
@@ -127,10 +197,24 @@ class ReliableTranslationProvider:
                 results = self.provider.translate([request])
                 if len(results) != 1 or results[0].segment_id != request.segment_id:
                     raise RuntimeError("Provider returned an invalid single-segment response")
+                self.stats.add_usage(results[0].usage)
                 return results[0]
             except NonRetryableProviderError as exc:
+                self.stats.add_usage(exc.usage)
                 last_error = exc
                 break
+            except RetryableProviderError as exc:
+                self.stats.add_usage(exc.usage)
+                last_error = exc
+                if attempts >= self.retry_policy.max_attempts:
+                    break
+                self.stats.retry_count += 1
+                if delay > 0:
+                    self._sleep(delay)
+                delay = min(
+                    delay * self.retry_policy.multiplier,
+                    self.retry_policy.maximum_delay_seconds,
+                )
             except Exception as exc:
                 last_error = exc
                 if attempts >= self.retry_policy.max_attempts:

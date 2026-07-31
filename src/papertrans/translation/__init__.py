@@ -1,4 +1,9 @@
-from papertrans.translation.base import TranslationProvider, TranslationRequest, TranslationResult
+from papertrans.translation.base import (
+    TranslationProvider,
+    TranslationRequest,
+    TranslationResult,
+    TranslationUsage,
+)
 from papertrans.translation.mock import MockTranslationProvider
 from papertrans.translation.pipeline import (
     ProtectedTranslationBatch,
@@ -16,15 +21,18 @@ from papertrans.translation.protection import (
 )
 from papertrans.translation.reliability import (
     NonRetryableProviderError,
+    ProviderError,
     ProviderExecutionError,
     ProviderRunStats,
     ReliableTranslationProvider,
+    RetryableProviderError,
     RetryPolicy,
 )
 
 __all__ = [
     "MockTranslationProvider",
     "NonRetryableProviderError",
+    "ProviderError",
     "ProtectedSegment",
     "ProtectedToken",
     "ProtectedTokenError",
@@ -33,10 +41,12 @@ __all__ = [
     "ProviderRunStats",
     "ProtectionValidation",
     "ReliableTranslationProvider",
+    "RetryableProviderError",
     "RetryPolicy",
     "TranslationProvider",
     "TranslationRequest",
     "TranslationResult",
+    "TranslationUsage",
     "protect_text_flows",
     "translate_text_flows",
     "translate_text_flows_with_protection",

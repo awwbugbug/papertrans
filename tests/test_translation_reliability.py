@@ -3,11 +3,13 @@ from pathlib import Path
 import pytest
 
 from papertrans.translation import (
+    NonRetryableProviderError,
     ProviderExecutionError,
     ReliableTranslationProvider,
     RetryPolicy,
     TranslationRequest,
     TranslationResult,
+    TranslationUsage,
 )
 
 
@@ -197,3 +199,69 @@ def test_rate_limit_spaces_provider_calls(tmp_path: Path) -> None:
 
     assert fake.sleeps == [0.5, 0.5]
     assert reliable.stats.rate_limit_sleep_seconds == 1.0
+
+
+def test_fresh_usage_is_counted_but_cached_usage_is_not(tmp_path: Path) -> None:
+    class UsageProvider(_CountingProvider):
+        name = "usage"
+
+        def translate(self, requests: list[TranslationRequest]) -> list[TranslationResult]:
+            request = requests[0]
+            self.calls.append(request.segment_id)
+            return [
+                TranslationResult(
+                    segment_id=request.segment_id,
+                    normal="璇戞枃",
+                    provider=self.name,
+                    usage=TranslationUsage(
+                        input_tokens=100,
+                        cached_input_tokens=25,
+                        output_tokens=40,
+                        estimated_cost=0.0012,
+                        currency="USD",
+                        pricing_snapshot="2026-07-31",
+                    ),
+                )
+            ]
+
+    cache_dir = tmp_path / "cache"
+    first = ReliableTranslationProvider(UsageProvider(), cache_dir)
+    first.translate([TranslationRequest(segment_id="s1", text="source")])
+    assert first.stats.to_dict()["usage"] == {
+        "input_tokens": 100,
+        "cached_input_tokens": 25,
+        "uncached_input_tokens": 75,
+        "output_tokens": 40,
+        "estimated_cost": 0.0012,
+        "currency": "USD",
+        "pricing_snapshot": "2026-07-31",
+    }
+
+    second = ReliableTranslationProvider(UsageProvider(), cache_dir)
+    result = second.translate([TranslationRequest(segment_id="s1", text="source")])[0]
+    assert result.usage is None
+    assert second.stats.to_dict()["usage"]["input_tokens"] == 0
+    assert second.stats.provider_calls == 0
+
+
+def test_non_retryable_error_counts_usage_once_and_is_sanitized(tmp_path: Path) -> None:
+    sentinel = "sk-sentinel-must-not-leak"
+
+    class RejectedProvider:
+        name = "rejected"
+
+        def translate(self, requests: list[TranslationRequest]) -> list[TranslationResult]:
+            raise NonRetryableProviderError(
+                error_type="authentication_failed",
+                http_status=401,
+                usage=TranslationUsage(input_tokens=12, output_tokens=0),
+            )
+
+    reliable = ReliableTranslationProvider(RejectedProvider(), tmp_path / "cache")
+    with pytest.raises(ProviderExecutionError) as exc_info:
+        reliable.translate([TranslationRequest(segment_id="s1", text=sentinel)])
+    assert exc_info.value.error_type == "authentication_failed"
+    assert exc_info.value.http_status == 401
+    assert sentinel not in str(exc_info.value)
+    assert reliable.stats.to_dict()["usage"]["input_tokens"] == 12
+    assert reliable.stats.retry_count == 0
