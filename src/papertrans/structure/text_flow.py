@@ -4,6 +4,7 @@ import re
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
+from statistics import median
 
 from papertrans.domain import Document, Page, Region, RegionType, TextFlow
 
@@ -211,6 +212,46 @@ def _looks_continuous(previous: Region, following: Region) -> bool:
     )
 
 
+def _is_ocr_line(region: Region) -> bool:
+    return region.metadata.get("content_source") == "paddleocr"
+
+
+def _ocr_lines_share_paragraph(
+    previous: Region,
+    following: Region,
+    *,
+    typical_height: float,
+    typical_width: float,
+    column_left: float,
+) -> bool:
+    if not (
+        _is_ocr_line(previous)
+        and _is_ocr_line(following)
+        and previous.type == following.type
+        and previous.type in _BODY_TYPES
+        and previous.translatable
+        and following.translatable
+        and _font_compatible(previous, following)
+    ):
+        return False
+    gap = following.bbox.y0 - previous.bbox.y1
+    if gap < -typical_height * 0.25 or gap > max(3.0, typical_height * 1.1):
+        return False
+    overlap = max(
+        0.0,
+        min(previous.bbox.x1, following.bbox.x1)
+        - max(previous.bbox.x0, following.bbox.x0),
+    )
+    if overlap < min(previous.bbox.width, following.bbox.width) * 0.65:
+        return False
+    looks_like_new_indented_paragraph = (
+        previous.bbox.width < typical_width * 0.72
+        and following.bbox.x0 > column_left + typical_height * 0.6
+        and _ends_with_terminal(previous.source_text or "")
+    )
+    return not looks_like_new_indented_paragraph
+
+
 def _semantic_regions(page: Page) -> list[Region]:
     return sorted(
         (
@@ -228,14 +269,43 @@ def _continuity_edges(document: Document) -> list[ContinuityEdge]:
     edges: list[ContinuityEdge] = []
     for page in document.pages:
         semantic = _semantic_regions(page)
-        for column in (1, 2):
+        for column in (0, 1, 2):
             column_regions = [
                 region for region in semantic if region.metadata.get("column_index") == column
             ]
+            ocr_lines = [region for region in column_regions if _is_ocr_line(region)]
+            typical_height = (
+                float(median(region.bbox.height for region in ocr_lines))
+                if ocr_lines
+                else 0.0
+            )
+            typical_width = (
+                float(median(region.bbox.width for region in ocr_lines))
+                if ocr_lines
+                else 0.0
+            )
+            column_left = min((region.bbox.x0 for region in ocr_lines), default=0.0)
             for previous, following in zip(column_regions, column_regions[1:], strict=False):
                 gap = following.bbox.y0 - previous.bbox.y1
                 font_size = previous.style.font_size if previous.style else 10.0
-                if _looks_continuous(previous, following) and gap <= max(8.0, font_size * 1.8):
+                if typical_height > 0 and _ocr_lines_share_paragraph(
+                    previous,
+                    following,
+                    typical_height=typical_height,
+                    typical_width=typical_width,
+                    column_left=column_left,
+                ):
+                    edges.append(
+                        ContinuityEdge(
+                            previous.id,
+                            following.id,
+                            "ocr_same_paragraph",
+                            0.9,
+                        )
+                    )
+                elif column != 0 and _looks_continuous(
+                    previous, following
+                ) and gap <= max(8.0, font_size * 1.8):
                     edges.append(ContinuityEdge(previous.id, following.id, "same_column", 0.88))
 
         left_body = [
@@ -351,6 +421,12 @@ def build_text_flows(document: Document) -> list[TextFlow]:
         "cross_column_edges": sum(edge.boundary == "cross_column" for edge in edges),
         "cross_page_edges": sum(edge.boundary == "cross_page" for edge in edges),
         "same_column_edges": sum(edge.boundary == "same_column" for edge in edges),
+        "ocr_line_edges": sum(edge.boundary == "ocr_same_paragraph" for edge in edges),
+        "ocr_merged_flow_count": sum(
+            len(flow.region_ids) > 1
+            and "paddleocr" in flow.metadata.get("content_sources", [])
+            for flow in flows
+        ),
         "dehyphenation_count": sum(len(flow.metadata.get("dehyphenations", [])) for flow in flows),
     }
     return flows

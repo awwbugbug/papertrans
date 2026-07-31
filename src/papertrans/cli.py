@@ -146,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Inspection artifact directory",
     )
     _add_ocr_arguments(inspect_parser)
+    inspect_parser.add_argument(
+        "--ocr-reference",
+        type=Path,
+        help="Optional text-layer PDF with matching pages for OCR quality measurement",
+    )
     roundtrip_parser = subparsers.add_parser(
         "roundtrip",
         help="Remove and redraw translatable source text without translation",
@@ -234,7 +239,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         source = args.input.expanduser().resolve()
         output = args.output_dir or _default_output(source, "inspect")
         try:
-            result = inspect_pdf(source, output, ocr_config=_ocr_runtime_config(parser, args))
+            result = inspect_pdf(
+                source,
+                output,
+                ocr_config=_ocr_runtime_config(parser, args),
+                ocr_reference=args.ocr_reference,
+            )
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             parser.error(str(exc))
         print(f"Inspection complete: {result.output_dir}")
@@ -243,6 +253,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(f"OCR plan:           {result.ocr_plan_json}")
         if getattr(result, "ocr_run_json", None) is not None:
             print(f"OCR run:            {result.ocr_run_json}")
+        if getattr(result, "ocr_quality_json", None) is not None:
+            print(f"OCR quality:        {result.ocr_quality_json}")
         print(f"Inspection report:  {result.report_markdown}")
     elif args.command == "roundtrip":
         source = args.input.expanduser().resolve()

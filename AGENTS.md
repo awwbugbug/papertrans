@@ -19,9 +19,9 @@ feature.
 
 ## Current milestone
 
-M6.2 is complete: explicit local PaddleOCR runs only on scan candidates and fuses recognized
-geometry into the Document IR without weakening M4.3 protection, M5.1 layout safety, or M5-C
-bounded translation context.
+M6.3 is complete: PaddleOCR physical lines recover into paragraph-level TextFlows and optional
+reference PDFs produce text-free OCR quality reports without weakening M4.3 protection, M5.1
+layout safety, or M5-C bounded translation context.
 
 - Native extraction, reading order, TextFlow recovery, and the `roundtrip` command are available.
 - `translate --provider mock` supports CJK line breaking, cross-region flow, compact candidates,
@@ -78,8 +78,15 @@ bounded translation context.
   MKL-DNN on the Windows CPU baseline because PaddlePaddle 3.3.1 fails in its oneDNN PIR bridge.
 - Successful OCR pages become `use_ocr`; `run_ocr` and `review` remain fail-closed before provider
   execution. Existing output PDFs must remain byte-for-byte unchanged on failure.
-- The next planned milestone is M6.3 OCR line-to-paragraph recovery and a real scanned-paper
-  quality baseline. Region-level mixed-page arbitration, table/formula OCR, and GUI remain deferred.
+- OCR paragraph recovery must use `ocr_same_paragraph` diagnostic edges and keep stable Region IDs.
+  It may merge same-column lines but must not merge across a column boundary.
+- `ocr-quality.json` uses schema `m6_ocr_quality_v1` and records only counts and metrics: CER, token
+  order similarity, character coverage, dimensions, policy, and violations. It must not store text.
+- The controlled ResNet page-2 raster baseline is CER 0.026003, token order 0.96702, coverage
+  1.001282, 85 OCR line edges, and 10 final TextFlows. It is a reproducible proxy, not an authentic
+  physical scan.
+- The next planned milestone is M6.4 authentic scan validation and region-level native/OCR
+  arbitration. Dedicated table/formula OCR and GUI remain deferred.
 
 When the milestone changes, update this section and the build-flow status in the same change.
 

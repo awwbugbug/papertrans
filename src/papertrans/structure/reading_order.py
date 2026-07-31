@@ -260,7 +260,8 @@ def _detect_two_columns(page: Page) -> bool:
         if region.source_text
         and region.type not in _PROTECTED_TYPES
         and page.width * 0.22 <= region.bbox.width <= page.width * 0.48
-        and region.bbox.height >= 12
+        and region.bbox.height
+        >= (6 if region.metadata.get("content_source") == "paddleocr" else 12)
     ]
     left = [region for region in substantial if (region.bbox.x0 + region.bbox.x1) / 2 < center]
     right = [region for region in substantial if (region.bbox.x0 + region.bbox.x1) / 2 >= center]

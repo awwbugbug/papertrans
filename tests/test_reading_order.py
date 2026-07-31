@@ -72,6 +72,26 @@ def test_asymmetric_figure_and_text_page_is_two_column() -> None:
     assert page.metadata["layout"] == "two_column"
 
 
+def test_short_ocr_lines_still_provide_two_column_evidence() -> None:
+    regions = [
+        _region("left-1", "Left academic line one", (50, 100, 280, 110)),
+        _region("left-2", "Left academic line two", (50, 114, 280, 124)),
+        _region("right-1", "Right academic line one", (320, 100, 550, 110)),
+        _region("right-2", "Right academic line two", (320, 114, 550, 124)),
+    ]
+    for region in regions:
+        region.metadata["content_source"] = "paddleocr"
+    page = Page(number=1, width=600, height=800, regions=regions)
+
+    recover_page_structure(page)
+
+    assert page.metadata["layout"] == "two_column"
+    by_id = {region.id: region for region in page.regions}
+    assert by_id["left-1"].metadata["column_index"] == 1
+    assert by_id["right-1"].metadata["column_index"] == 2
+    assert by_id["left-2"].reading_order < by_id["right-1"].reading_order
+
+
 def test_reference_section_continues_across_pages_and_is_protected() -> None:
     first_page = Page(
         number=1,

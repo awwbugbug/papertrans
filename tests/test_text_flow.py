@@ -21,6 +21,21 @@ def _paragraph(
     )
 
 
+def _ocr_line(
+    region_id: str,
+    text: str,
+    bbox: tuple[float, float, float, float],
+    order: int,
+    column: int = 0,
+) -> Region:
+    region = _paragraph(region_id, text, bbox, order, column, font_size=8)
+    region.confidence = 0.96
+    region.metadata.update(
+        {"content_source": "paddleocr", "content_confidence": 0.96}
+    )
+    return region
+
+
 def test_normalize_fragments_records_dehyphenation_decisions() -> None:
     text, decisions = normalize_fragments(
         ["The model is im-", "proved and state-", "of-the-art."],
@@ -152,3 +167,72 @@ def test_numeric_paragraph_continuations_merge_into_one_flow() -> None:
 
     assert len(flows) == 1
     assert flows[0].region_ids == ["schedule", "epochs", "ending"]
+
+
+def test_ocr_lines_merge_by_geometry_even_when_a_line_ends_with_period() -> None:
+    lines = [
+        _ocr_line(
+            "line-1",
+            "The first sentence ends here.",
+            (50, 80, 330, 90),
+            order=1,
+        ),
+        _ocr_line(
+            "line-2",
+            "The same paragraph continues on the next physical line",
+            (50, 94, 350, 104),
+            order=2,
+        ),
+        _ocr_line(
+            "line-3",
+            "and finishes with a shorter final line.",
+            (50, 108, 245, 118),
+            order=3,
+        ),
+    ]
+    document = Document(
+        source_path="scan.pdf",
+        pages=[Page(number=1, width=400, height=600, regions=lines)],
+    )
+
+    flows = build_text_flows(document)
+
+    assert len(flows) == 1
+    assert flows[0].region_ids == ["line-1", "line-2", "line-3"]
+    assert [
+        edge["boundary"] for edge in flows[0].metadata["continuity_edges"]
+    ] == ["ocr_same_paragraph", "ocr_same_paragraph"]
+    assert document.metadata["text_flow_stats"]["ocr_line_edges"] == 2
+
+
+def test_ocr_geometry_keeps_paragraph_gap_and_column_boundary_separate() -> None:
+    lines = [
+        _ocr_line(
+            "paragraph-one-final",
+            "This is the short final line.",
+            (50, 80, 210, 90),
+            order=1,
+        ),
+        _ocr_line(
+            "paragraph-two-first",
+            "A new indented paragraph begins after a visible gap.",
+            (60, 108, 350, 118),
+            order=2,
+        ),
+        _ocr_line(
+            "right-column",
+            "This belongs to another column.",
+            (220, 80, 380, 90),
+            order=3,
+            column=2,
+        ),
+    ]
+    document = Document(
+        source_path="scan.pdf",
+        pages=[Page(number=1, width=400, height=600, regions=lines)],
+    )
+
+    flows = build_text_flows(document)
+
+    assert len(flows) == 3
+    assert all(len(flow.region_ids) == 1 for flow in flows)

@@ -45,6 +45,14 @@ def test_inspect_accepts_explicit_local_ocr_configuration() -> None:
     assert args.ocr_device == "cpu"
 
 
+def test_inspect_accepts_matching_ocr_reference_pdf() -> None:
+    args = build_parser().parse_args(
+        ["inspect", "scan.pdf", "--ocr-reference", "reference.pdf"]
+    )
+
+    assert args.ocr_reference == Path("reference.pdf")
+
+
 def test_translate_accepts_named_and_compatible_configuration() -> None:
     parser = build_parser()
     deepseek = parser.parse_args(

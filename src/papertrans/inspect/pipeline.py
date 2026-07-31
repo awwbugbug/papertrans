@@ -13,6 +13,7 @@ from papertrans.ingest import (
     annotate_document_with_ocr_plan,
     prepare_document,
 )
+from papertrans.qa import evaluate_ocr_documents
 
 COLORS: dict[RegionType, tuple[float, float, float]] = {
     RegionType.TITLE: (0.85, 0.15, 0.15),
@@ -40,6 +41,7 @@ class InspectionResult:
     report_markdown: Path
     document: Document
     ocr_run_json: Path | None = None
+    ocr_quality_json: Path | None = None
 
 
 def _render_pages(source_path: Path, document: Document, output_dir: Path) -> None:
@@ -107,7 +109,12 @@ def _render_pages(source_path: Path, document: Document, output_dir: Path) -> No
             overlay_pdf.close()
 
 
-def _write_report(document: Document, ocr_plan: OCRPlan, output_dir: Path) -> Path:
+def _write_report(
+    document: Document,
+    ocr_plan: OCRPlan,
+    output_dir: Path,
+    ocr_quality: dict[str, object] | None = None,
+) -> Path:
     report_path = output_dir / "inspect-report.md"
     lines = [
         "# PDF inspection report",
@@ -115,7 +122,7 @@ def _write_report(document: Document, ocr_plan: OCRPlan, output_dir: Path) -> Pa
         f"- Source: `{document.source_path}`",
         f"- Pages: {len(document.pages)}",
         f"- Schema: `{document.schema_version}`",
-        "- Status: M6.2 native-first routing with optional local PaddleOCR",
+        "- Status: M6.3 OCR line-to-paragraph recovery with optional quality reference",
         f"- Text flows: {document.metadata.get('text_flow_stats', {}).get('flow_count', 0)}",
         "- Merged flows: "
         f"{document.metadata.get('text_flow_stats', {}).get('merged_flow_count', 0)}",
@@ -129,12 +136,26 @@ def _write_report(document: Document, ocr_plan: OCRPlan, output_dir: Path) -> Pa
         f"- OCR candidate pages: {ocr_plan.summary['run_ocr_count']}",
         f"- OCR accepted pages: {ocr_plan.summary['use_ocr_count']}",
         f"- OCR review pages: {ocr_plan.summary['review_count']}",
+        "- OCR line continuity edges: "
+        f"{document.metadata.get('text_flow_stats', {}).get('ocr_line_edges', 0)}",
+        "- OCR merged paragraph flows: "
+        f"{document.metadata.get('text_flow_stats', {}).get('ocr_merged_flow_count', 0)}",
         "",
         "## Page summary",
         "",
         "| Page | Regions | Translatable | OCR action | Preview |",
         "| ---: | ---: | ---: | --- | --- |",
     ]
+    if ocr_quality is not None:
+        summary = ocr_quality.get("summary", {})
+        if isinstance(summary, dict):
+            lines[18:18] = [
+                f"- OCR quality gate: {'PASS' if ocr_quality.get('passed') else 'REVIEW'}",
+                f"- OCR character error rate: {summary.get('character_error_rate', 'unknown')}",
+                f"- OCR token order similarity: {summary.get('token_order_similarity', 'unknown')}",
+                "- OCR character coverage ratio: "
+                f"{summary.get('character_coverage_ratio', 'unknown')}",
+            ]
     decisions = {decision.page_number: decision for decision in ocr_plan.pages}
     for page in document.pages:
         translatable = sum(1 for region in page.regions if region.translatable)
@@ -153,6 +174,8 @@ def _write_report(document: Document, ocr_plan: OCRPlan, output_dir: Path) -> Pa
             "are pending.",
             "- Cross-column headings and irregular magazine-style layouts are not solved yet.",
             "- OCR is opt-in and only scan-like pages are sent to the local engine.",
+            "- Region-level native/OCR arbitration and dedicated table/formula OCR "
+            "remain deferred.",
             "",
         ]
     )
@@ -165,6 +188,7 @@ def inspect_pdf(
     output_dir: str | Path,
     *,
     ocr_config: OCRRuntimeConfig | None = None,
+    ocr_reference: str | Path | None = None,
 ) -> InspectionResult:
     source_path = Path(source).expanduser().resolve()
     resolved_output = Path(output_dir).expanduser().resolve()
@@ -203,8 +227,18 @@ def inspect_pdf(
         json.dumps(preparation.run.to_dict(), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    ocr_quality_json = None
+    quality = None
+    if ocr_reference is not None:
+        reference = prepare_document(ocr_reference).document
+        quality = evaluate_ocr_documents(reference, document)
+        ocr_quality_json = resolved_output / "ocr-quality.json"
+        ocr_quality_json.write_text(
+            json.dumps(quality, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     _render_pages(source_path, document, resolved_output)
-    report = _write_report(document, ocr_plan, resolved_output)
+    report = _write_report(document, ocr_plan, resolved_output, quality)
     return InspectionResult(
         output_dir=resolved_output,
         document_json=document_json,
@@ -213,4 +247,5 @@ def inspect_pdf(
         report_markdown=report,
         document=document,
         ocr_run_json=ocr_run_json,
+        ocr_quality_json=ocr_quality_json,
     )

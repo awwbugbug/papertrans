@@ -2,7 +2,7 @@
 
 PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目标不是简单地提取文字并覆盖回 PDF，而是建立可检查的文档中间表示，恢复阅读顺序，并在可读性约束下尽量保持原页面结构。
 
-当前版本已完成 **M6.2 选择性本地 OCR 与 Document IR 融合**：默认仍只使用原生文字；显式启用 PaddleOCR 后，只对 `run_ocr` 页面执行本地 PP-OCRv6，把带坐标、来源和置信度的识别行加入统一文档模型。低置信度或歧义页面仍会在调用翻译 API 前失败关闭。M5-C 的受限翻译语境、M5.1 的版式安全门以及 M4.3 的多提供方接入保持不变。`mock` 仍是默认提供方且完全离线。
+当前版本已完成 **M6.3 OCR 段落恢复与质量基线**：默认仍只使用原生文字；显式启用 PaddleOCR 后，只对 `run_ocr` 页面执行本地 PP-OCRv6，并按栏、行高、间距和缩进把物理行恢复为段落级 TextFlow。可选参考 PDF 会生成不含正文的字符错误率、词序与覆盖率报告。低置信度或歧义页面仍会在调用翻译 API 前失败关闭。`mock` 仍是默认提供方且完全离线。
 
 ## 当前能力
 
@@ -35,6 +35,8 @@ PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目�
 - 未启用 OCR 时，`run_ocr` 或 `review` 页面会在 provider 调用前阻止翻译；启用后只有通过字符量与平均置信度门槛的页面进入 `use_ocr`。
 - 原生文字区域和 TextFlow 在 Document IR 中保留 `content_source` 与 `content_confidence` 来源信息。
 - `ocr-run.json` 记录调用页数、接受/拒绝行数和设备类型，不记录论文正文或模型绝对路径。
+- OCR 行合并边以 `ocr_same_paragraph` 写入 TextFlow 诊断；跨页宽编号 `0` 和栏编号 `1/2` 均被覆盖。
+- `inspect --ocr-reference <pdf>` 可输出 `ocr-quality.json`，记录 CER、词序相似度和字符覆盖率，不保存参考或识别正文。
 
 ## 本地开发
 
@@ -62,6 +64,16 @@ python -m venv .venv
 ```
 
 同样的 OCR 参数可用于 `translate`。CPU 是当前可复现基线；程序不会自动下载模型，且会自动兼容识别模型目录多嵌套一层的情况。
+
+对页数和尺寸一致、带可靠文字层的参考 PDF 计算 OCR 质量：
+
+```powershell
+.\.venv\Scripts\papertrans inspect .\scan.pdf `
+  --ocr-backend paddleocr `
+  --ocr-model-dir .\models\paddleocr `
+  --ocr-reference .\reference.pdf `
+  --output-dir .\.papertrans\ocr-quality
+```
 
 指定输出目录：
 

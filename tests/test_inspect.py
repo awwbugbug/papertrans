@@ -50,3 +50,17 @@ def test_inspect_pdf_writes_document_and_previews(tmp_path: Path) -> None:
     assert payload["text_flows"][0]["metadata"]["content_sources"] == ["native_pdf"]
     assert result.report_markdown.is_file()
     assert "keep_native" in result.report_markdown.read_text(encoding="utf-8")
+
+
+def test_inspect_can_write_text_free_ocr_quality_report(tmp_path: Path) -> None:
+    source = tmp_path / "sample.pdf"
+    output = tmp_path / "inspection"
+    _create_sample_pdf(source)
+
+    result = inspect_pdf(source, output, ocr_reference=source)
+
+    assert result.ocr_quality_json is not None
+    quality = json.loads(result.ocr_quality_json.read_text(encoding="utf-8"))
+    assert quality["schema_version"] == "m6_ocr_quality_v1"
+    assert quality["passed"] is True
+    assert "source_text" not in str(quality)
