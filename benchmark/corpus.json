@@ -1,0 +1,30 @@
+{
+  "schema_version": "0.1",
+  "description": "Local born-digital academic PDF benchmark. PDF files live in ignored test_pdf/.",
+  "documents": [
+    {
+      "id": "1411.4038v2",
+      "path": "test_pdf/1411.4038v2.pdf",
+      "pages": 10,
+      "features": ["two_column", "figures", "footnotes", "vertical_arxiv_stamp"]
+    },
+    {
+      "id": "1504.08083v2",
+      "path": "test_pdf/1504.08083v2.pdf",
+      "pages": 9,
+      "features": ["two_column", "numbered_subheadings", "footnotes"]
+    },
+    {
+      "id": "1506.02640v5",
+      "path": "test_pdf/1506.02640v5.pdf",
+      "pages": 10,
+      "features": ["two_column", "figures", "figure_text", "cross_column_continuation"]
+    },
+    {
+      "id": "1512.03385v1",
+      "path": "test_pdf/1512.03385v1.pdf",
+      "pages": 12,
+      "features": ["two_column", "vector_charts", "small_chart_labels", "footnotes"]
+    }
+  ]
+}
