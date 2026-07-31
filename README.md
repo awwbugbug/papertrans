@@ -2,7 +2,7 @@
 
 PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目标不是简单地提取文字并覆盖回 PDF，而是建立可检查的文档中间表示，恢复阅读顺序，并在可读性约束下尽量保持原页面结构。
 
-当前版本已完成 **M5-C 受限翻译语境增强基线**：每个段落请求可携带受字符上限约束的章节标题、前后相邻段落和当前段命中的可选术语表，同时保留 M5.1 的有限局部修复与失败不覆盖输出。M4.3 的 DeepSeek、Kimi 和自定义 OpenAI-compatible 接入保持不变。`mock` 仍是默认提供方且完全离线；模拟中文只用于检验管线和排版，不代表真实翻译质量。
+当前版本已完成 **M6.1 选择性 OCR 决策基线**：在不运行 OCR、也不下载模型的前提下，先判断每页应保留原生文字、进入 OCR、人工复核或跳过空白页；需要 OCR 或复核的文档会在调用翻译 API 前失败关闭。M5-C 的受限翻译语境、M5.1 的版式安全门以及 M4.3 的多提供方接入保持不变。`mock` 仍是默认提供方且完全离线。
 
 ## 当前能力
 
@@ -30,6 +30,10 @@ PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目�
 - 对 DeepSeek/Kimi 的新调用记录输入、缓存输入、输出令牌和按日期快照估算的费用；本地缓存命中不重复计费。
 - 每个段落请求最多携带 200 字符章节标题及前后各 600 字符相邻文本，不会把整份 PDF 作为单次请求上传。
 - 支持 `--glossary` JSON 术语表；只发送当前段命中的术语，语境与术语变化会自动隔离缓存。
+- `inspect` 输出 `ocr-plan.json`，按页记录原生字符量、文本质量、栅格图覆盖率、矢量对象数量、决策及置信度。
+- OCR 决策分为 `keep_native`、`run_ocr`、`review` 和 `skip_blank`，并直接标注在 layout overlay 右上角。
+- `run_ocr` 或 `review` 页面会在 provider 调用前阻止翻译，且不会创建或覆盖已有 `output.pdf`。
+- 原生文字区域和 TextFlow 在 Document IR 中保留 `content_source` 与 `content_confidence` 来源信息。
 
 ## 本地开发
 
@@ -46,6 +50,8 @@ python -m venv .venv
 ```powershell
 .\.venv\Scripts\papertrans inspect .\paper.pdf
 ```
+
+检查产物中的 `ocr-plan.json` 会列出逐页 OCR 决策；M6.1 只负责选择和失败保护，尚不执行 OCR。
 
 指定输出目录：
 
@@ -120,7 +126,7 @@ $env:MY_PROVIDER_API_KEY = "set-locally"
 
 可选的真实服务 smoke test 只应使用一份短小、合成且不敏感的 PDF：先在当前本地终端设置新的环境变量密钥，再显式选择提供方，并使用独立输出目录。确认 `provider-run.json`、保护验证和质量门后，立即在服务方控制台撤销临时密钥。不要把真实密钥写入命令历史、脚本、仓库或 bug 报告；自动化测试始终使用 `MockTransport`，不会访问真实网络。
 
-翻译产物包括 `output.pdf`、`document.json`、`protected-segments.json`、`provider-run.json`、`translations.json`、`layout.json` 和 `translation-report.json`。保护映射和提供方运行状态都会在请求前落盘；成功后分别更新为 `validated` 和 `completed`。默认使用本机 Microsoft YaHei；可通过 `PAPERTRANS_CJK_FONT` 和 `PAPERTRANS_CJK_BOLD_FONT` 指定本地字体文件。字体仅在运行时读取，不会复制进仓库。
+翻译产物包括 `output.pdf`、`document.json`、`ocr-plan.json`、`protected-segments.json`、`provider-run.json`、`translations.json`、`layout.json` 和 `translation-report.json`。OCR 预检在 provider 调用前完成；保护映射和提供方运行状态也会在请求前落盘。默认使用本机 Microsoft YaHei；可通过 `PAPERTRANS_CJK_FONT` 和 `PAPERTRANS_CJK_BOLD_FONT` 指定本地字体文件。字体仅在运行时读取，不会复制进仓库。
 
 当前渲染仍使用白色填充清除原文字形，因此只适合白底论文；彩色背景、纹理背景及与文本重叠的复杂矢量对象尚未解决。
 
@@ -130,6 +136,7 @@ $env:MY_PROVIDER_API_KEY = "set-locally"
 .papertrans/demo/
 ├── document.json
 ├── text-flows.json
+├── ocr-plan.json
 ├── inspect-report.md
 ├── pages/
 └── overlays/

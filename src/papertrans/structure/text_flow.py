@@ -327,6 +327,19 @@ def build_text_flows(document: Document) -> list[TextFlow]:
                 metadata={
                     "continuity_edges": [edge.to_dict() for edge in relevant_edges],
                     "dehyphenations": dehyphenations,
+                    "content_sources": sorted(
+                        {
+                            str(region.metadata.get("content_source", "unknown"))
+                            for region in regions
+                        }
+                    ),
+                    "content_confidence": min(
+                        (
+                            float(region.metadata.get("content_confidence", 1.0))
+                            for region in regions
+                        ),
+                        default=1.0,
+                    ),
                 },
             )
         )

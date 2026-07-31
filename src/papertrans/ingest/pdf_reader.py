@@ -119,6 +119,10 @@ def extract_document(source: str | Path) -> Document:
                 number=page_index + 1,
                 width=float(pdf_page.rect.width),
                 height=float(pdf_page.rect.height),
+                metadata={
+                    "native_drawing_count": len(pdf_page.get_drawings()),
+                    "native_link_count": len(pdf_page.get_links()),
+                },
             )
 
             for block_index, block in enumerate(blocks):
@@ -135,7 +139,11 @@ def extract_document(source: str | Path) -> Document:
                             type=RegionType.FIGURE,
                             bbox=bbox,
                             translatable=False,
-                            metadata={"native_block_type": "image"},
+                            metadata={
+                                "native_block_type": "image",
+                                "content_source": "native_pdf_image",
+                                "content_confidence": 1.0,
+                            },
                         )
                     )
                     continue
@@ -165,6 +173,8 @@ def extract_document(source: str | Path) -> Document:
                         confidence=0.6,
                         metadata={
                             "native_block_type": "text",
+                            "content_source": "native_pdf",
+                            "content_confidence": 1.0,
                             "baseline_classifier": True,
                             "max_font_size": round(block_max_size, 3),
                             "native_lines": native_lines,

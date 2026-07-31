@@ -19,8 +19,8 @@ feature.
 
 ## Current milestone
 
-M5-C is complete: provider requests now receive deterministic, bounded section, neighbor, and
-optional glossary context without weakening M4.3 protection or M5.1 fail-closed layout behavior.
+M6.1 is complete: a deterministic, model-free OCR preflight routes pages before provider calls
+without weakening M4.3 protection, M5.1 layout safety, or M5-C bounded translation context.
 
 - Native extraction, reading order, TextFlow recovery, and the `roundtrip` command are available.
 - `translate --provider mock` supports CJK line breaking, cross-region flow, compact candidates,
@@ -65,8 +65,19 @@ optional glossary context without weakening M4.3 protection or M5.1 fail-closed 
   with zero overflow, translated overlap, and protected overlap.
 - Whole-document prompts, vector retrieval, automatic terminology mining, and cross-segment
   provider batches remain deferred.
-- The next planned milestone is M6 selective OCR for pages or regions without a reliable text
-  layer. Do not download any OCR model before following the repository model download policy.
+- `ocr-plan.json` uses schema `m6_ocr_plan_v1` and routes pages to `keep_native`, `run_ocr`,
+  `review`, or `skip_blank` from native character count, text quality, raster coverage, and vector
+  drawing diagnostics. Every decision includes confidence and reason codes.
+- Native Region and TextFlow metadata preserve content source and confidence. Future OCR regions
+  must use a distinct source and retain engine confidence and geometry.
+- `run_ocr` and `review` are fail-closed for translation before provider execution. Existing
+  output PDFs must remain byte-for-byte unchanged; `document.json` and `ocr-plan.json` remain
+  inspectable.
+- Inspection overlays display the page OCR action. The four born-digital papers stay native, and
+  synthetic scan, mixed, blank, and vector-only pages cover all routing branches.
+- M6.1 does not execute OCR or download models. The next planned milestone is M6.2 local OCR
+  execution and Document IR fusion for `run_ocr` pages only. Follow the model download policy
+  before installing or loading any model weights.
 
 When the milestone changes, update this section and the build-flow status in the same change.
 

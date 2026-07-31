@@ -193,6 +193,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(f"Inspection complete: {result.output_dir}")
         print(f"Document model:     {result.document_json}")
         print(f"Text flows:         {result.text_flows_json}")
+        print(f"OCR plan:           {result.ocr_plan_json}")
         print(f"Inspection report:  {result.report_markdown}")
     elif args.command == "roundtrip":
         source = args.input.expanduser().resolve()
@@ -266,6 +267,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             if reasons:
                 print(f"Review reasons:     {reasons}")
         print(f"Protected segments: {result.protected_segments_json}")
+        print(f"OCR plan:           {result.ocr_plan_json}")
         print(f"Provider run:       {result.provider_run_json}")
         print(f"Translations:       {result.translations_json}")
         print(f"Layout:             {result.layout_json}")

@@ -4,6 +4,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
+from papertrans.ingest import OCRPreflightError
 from papertrans.translation import (
     NonRetryableProviderError,
     ProtectedTokenError,
@@ -50,6 +51,44 @@ def _create_fixture(path: Path) -> None:
     )
     document.save(path)
     document.close()
+
+
+def _create_scanned_fixture(path: Path) -> None:
+    source = pymupdf.open()
+    source_page = source.new_page(width=420, height=595)
+    source_page.insert_textbox(
+        pymupdf.Rect(40, 80, 380, 500),
+        "This rasterized page has no native text layer after insertion. " * 12,
+        fontsize=11,
+    )
+    raster = source_page.get_pixmap(matrix=pymupdf.Matrix(1.5, 1.5), alpha=False)
+    image = raster.tobytes("png")
+    source.close()
+
+    document = pymupdf.open()
+    page = document.new_page(width=420, height=595)
+    page.insert_image(page.rect, stream=image)
+    document.save(path)
+    document.close()
+
+
+def test_translation_fails_closed_before_provider_for_scanned_page(tmp_path: Path) -> None:
+    source = tmp_path / "scan.pdf"
+    output = tmp_path / "translation"
+    _create_scanned_fixture(source)
+    provider = DeterministicProvider()
+    output.mkdir()
+    existing_output = b"existing-safe-output"
+    (output / "output.pdf").write_bytes(existing_output)
+
+    with pytest.raises(OCRPreflightError, match="OCR preflight blocked"):
+        run_translation_job(source, output, provider)
+
+    assert provider.calls == []
+    assert (output / "output.pdf").read_bytes() == existing_output
+    assert (output / "document.json").is_file()
+    payload = json.loads((output / "ocr-plan.json").read_text(encoding="utf-8"))
+    assert payload["pages"][0]["action"] == "run_ocr"
 
 
 def test_generic_job_writes_provider_neutral_artifacts_and_resumes(tmp_path: Path) -> None:

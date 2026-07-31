@@ -7,7 +7,12 @@ from pathlib import Path
 import pymupdf
 
 from papertrans.domain import Document, RegionType
-from papertrans.ingest import extract_document
+from papertrans.ingest import (
+    OCRPlan,
+    annotate_document_with_ocr_plan,
+    build_ocr_plan,
+    extract_document,
+)
 
 COLORS: dict[RegionType, tuple[float, float, float]] = {
     RegionType.TITLE: (0.85, 0.15, 0.15),
@@ -31,6 +36,7 @@ class InspectionResult:
     output_dir: Path
     document_json: Path
     text_flows_json: Path
+    ocr_plan_json: Path
     report_markdown: Path
     document: Document
 
@@ -70,13 +76,37 @@ def _render_pages(source_path: Path, document: Document, output_dir: Path) -> No
                     color=color,
                     overlay=True,
                 )
+            ocr_action = str(
+                document.pages[page_index].metadata.get("ocr", {}).get("action", "unknown")
+            )
+            action_color = {
+                "keep_native": (0.05, 0.55, 0.20),
+                "run_ocr": (0.85, 0.10, 0.10),
+                "review": (0.95, 0.50, 0.05),
+                "skip_blank": (0.40, 0.40, 0.40),
+            }.get(ocr_action, (0.20, 0.20, 0.20))
+            banner = pymupdf.Rect(source_page.rect.width - 92, 5, source_page.rect.width - 5, 19)
+            overlay_page.draw_rect(
+                banner,
+                color=action_color,
+                fill=(1, 1, 1),
+                width=0.8,
+                overlay=True,
+            )
+            overlay_page.insert_text(
+                pymupdf.Point(banner.x0 + 3, banner.y0 + 9),
+                f"OCR: {ocr_action}",
+                fontsize=6,
+                color=action_color,
+                overlay=True,
+            )
             overlay_page.get_pixmap(matrix=matrix, alpha=False).save(
                 overlay_dir / f"page-{page_number:03d}-layout.png"
             )
             overlay_pdf.close()
 
 
-def _write_report(document: Document, output_dir: Path) -> Path:
+def _write_report(document: Document, ocr_plan: OCRPlan, output_dir: Path) -> Path:
     report_path = output_dir / "inspect-report.md"
     lines = [
         "# PDF inspection report",
@@ -84,7 +114,7 @@ def _write_report(document: Document, output_dir: Path) -> Path:
         f"- Source: `{document.source_path}`",
         f"- Pages: {len(document.pages)}",
         f"- Schema: `{document.schema_version}`",
-        "- Status: M1 heuristic column reading order; not yet production semantics",
+        "- Status: M6.1 native-first OCR routing; OCR execution is not enabled",
         f"- Text flows: {document.metadata.get('text_flow_stats', {}).get('flow_count', 0)}",
         "- Merged flows: "
         f"{document.metadata.get('text_flow_stats', {}).get('merged_flow_count', 0)}",
@@ -94,16 +124,23 @@ def _write_report(document: Document, output_dir: Path) -> Path:
         f"{document.metadata.get('text_flow_stats', {}).get('cross_page_edges', 0)}",
         "- Dehyphenation decisions: "
         f"{document.metadata.get('text_flow_stats', {}).get('dehyphenation_count', 0)}",
+        f"- Native pages: {ocr_plan.summary['keep_native_count']}",
+        f"- OCR candidate pages: {ocr_plan.summary['run_ocr_count']}",
+        f"- OCR review pages: {ocr_plan.summary['review_count']}",
         "",
         "## Page summary",
         "",
-        "| Page | Regions | Translatable | Preview |",
-        "| ---: | ---: | ---: | --- |",
+        "| Page | Regions | Translatable | OCR action | Preview |",
+        "| ---: | ---: | ---: | --- | --- |",
     ]
+    decisions = {decision.page_number: decision for decision in ocr_plan.pages}
     for page in document.pages:
         translatable = sum(1 for region in page.regions if region.translatable)
         preview = f"[layout](overlays/page-{page.number:03d}-layout.png)"
-        lines.append(f"| {page.number} | {len(page.regions)} | {translatable} | {preview} |")
+        action = decisions[page.number].action.value
+        lines.append(
+            f"| {page.number} | {len(page.regions)} | {translatable} | {action} | {preview} |"
+        )
     lines.extend(
         [
             "",
@@ -113,7 +150,7 @@ def _write_report(document: Document, output_dir: Path) -> Path:
             "- Figure and table captions use prefix rules; formula and reference detection "
             "are pending.",
             "- Cross-column headings and irregular magazine-style layouts are not solved yet.",
-            "- OCR is not used in this milestone.",
+            "- OCR candidates are detected, but no OCR engine is executed in M6.1.",
             "",
         ]
     )
@@ -127,6 +164,8 @@ def inspect_pdf(source: str | Path, output_dir: str | Path) -> InspectionResult:
     resolved_output.mkdir(parents=True, exist_ok=True)
 
     document = extract_document(source_path)
+    ocr_plan = build_ocr_plan(document)
+    annotate_document_with_ocr_plan(document, ocr_plan)
     document_json = resolved_output / "document.json"
     document_json.write_text(
         json.dumps(document.to_dict(), ensure_ascii=False, indent=2),
@@ -146,12 +185,18 @@ def inspect_pdf(source: str | Path, output_dir: str | Path) -> InspectionResult:
         ),
         encoding="utf-8",
     )
+    ocr_plan_json = resolved_output / "ocr-plan.json"
+    ocr_plan_json.write_text(
+        json.dumps(ocr_plan.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     _render_pages(source_path, document, resolved_output)
-    report = _write_report(document, resolved_output)
+    report = _write_report(document, ocr_plan, resolved_output)
     return InspectionResult(
         output_dir=resolved_output,
         document_json=document_json,
         text_flows_json=text_flows_json,
+        ocr_plan_json=ocr_plan_json,
         report_markdown=report,
         document=document,
     )

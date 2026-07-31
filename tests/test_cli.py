@@ -306,6 +306,7 @@ def test_zero_requests_per_second_remains_valid(
         return SimpleNamespace(
             output_dir=output,
             output_pdf=output / "output.pdf",
+            ocr_plan_json=output / "ocr-plan.json",
             protected_segments_json=output / "protected-segments.json",
             provider_run_json=output / "provider-run.json",
             translations_json=output / "translations.json",
@@ -346,6 +347,7 @@ def test_main_reports_review_without_claiming_output_pdf(
         return SimpleNamespace(
             output_dir=output,
             output_pdf=output / "output.pdf",
+            ocr_plan_json=output / "ocr-plan.json",
             protected_segments_json=output / "protected-segments.json",
             provider_run_json=output / "provider-run.json",
             translations_json=output / "translations.json",
@@ -395,6 +397,7 @@ def test_main_loads_glossary_before_provider_and_passes_terms_to_job(
         return SimpleNamespace(
             output_dir=output,
             output_pdf=output / "output.pdf",
+            ocr_plan_json=output / "ocr-plan.json",
             protected_segments_json=output / "protected-segments.json",
             provider_run_json=output / "provider-run.json",
             translations_json=output / "translations.json",
@@ -468,6 +471,7 @@ def test_main_dispatches_selected_provider_to_generic_job(
         return SimpleNamespace(
             output_dir=output,
             output_pdf=output / "output.pdf",
+            ocr_plan_json=output / "ocr-plan.json",
             protected_segments_json=output / "protected-segments.json",
             provider_run_json=output / "provider-run.json",
             translations_json=output / "translations.json",
@@ -634,6 +638,7 @@ def test_cleanup_only_failure_is_sanitized_and_not_ignored(
         lambda *args, **kwargs: SimpleNamespace(
             output_dir=output,
             output_pdf=output / "output.pdf",
+            ocr_plan_json=output / "ocr-plan.json",
             protected_segments_json=output / "protected-segments.json",
             provider_run_json=output / "provider-run.json",
             translations_json=output / "translations.json",

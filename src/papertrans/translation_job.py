@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from papertrans.ingest import extract_document
+from papertrans.ingest import (
+    OCRPreflightError,
+    annotate_document_with_ocr_plan,
+    build_ocr_plan,
+    extract_document,
+)
 from papertrans.layout import build_cjk_layout, validate_layout
 from papertrans.qa import evaluate_roundtrip
 from papertrans.render import render_translated_layout
@@ -68,6 +73,7 @@ _SECRET_VALUE_PATTERNS = (
 class TranslationJobResult:
     output_dir: Path
     output_pdf: Path
+    ocr_plan_json: Path
     protected_segments_json: Path
     provider_run_json: Path
     translations_json: Path
@@ -264,6 +270,21 @@ def run_translation_job(
     temporary_pdf = resolved_output / f".{uuid4().hex}.translation.tmp.pdf"
 
     document = extract_document(source_path)
+    ocr_plan = build_ocr_plan(document)
+    annotate_document_with_ocr_plan(document, ocr_plan)
+    document_json = resolved_output / "document.json"
+    document_json.write_text(
+        json.dumps(document.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    ocr_plan_json = resolved_output / "ocr-plan.json"
+    ocr_plan_json.write_text(
+        json.dumps(ocr_plan.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    if ocr_plan.blocking_page_numbers:
+        raise OCRPreflightError(ocr_plan.blocking_page_numbers, ocr_plan_json)
+
     resolved_cache = (
         Path(cache_dir).expanduser().resolve()
         if cache_dir is not None
@@ -285,11 +306,6 @@ def run_translation_job(
         cache_dir=resolved_cache,
         retry_policy=retry_policy,
         requests_per_second=requests_per_second,
-    )
-    document_json = resolved_output / "document.json"
-    document_json.write_text(
-        json.dumps(document.to_dict(), ensure_ascii=False, indent=2),
-        encoding="utf-8",
     )
     protected_segments_json = resolved_output / "protected-segments.json"
     protected_segments = protect_text_flows(document)
@@ -441,6 +457,7 @@ def run_translation_job(
         "mode": "translated_pdf",
         "provider": provider.name,
         "provider_configuration": provider_configuration,
+        "ocr_preflight": ocr_plan.to_dict(),
         "protection": translation_batch.stats,
         "translation_context": translation_batch.context_stats.to_dict(),
         "provider_execution": reliable_provider.stats.to_dict(),
@@ -460,6 +477,7 @@ def run_translation_job(
     return TranslationJobResult(
         output_dir=resolved_output,
         output_pdf=output_pdf,
+        ocr_plan_json=ocr_plan_json,
         protected_segments_json=protected_segments_json,
         provider_run_json=provider_run_json,
         translations_json=translations_json,

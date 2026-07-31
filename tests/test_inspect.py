@@ -41,4 +41,11 @@ def test_inspect_pdf_writes_document_and_previews(tmp_path: Path) -> None:
     assert (output / "overlays" / "page-001-layout.png").is_file()
     assert result.text_flows_json.is_file()
     assert payload["text_flows"]
+    assert result.ocr_plan_json.is_file()
+    ocr_plan = json.loads(result.ocr_plan_json.read_text(encoding="utf-8"))
+    assert ocr_plan["schema_version"] == "m6_ocr_plan_v1"
+    assert ocr_plan["pages"][0]["action"] == "keep_native"
+    assert payload["pages"][0]["metadata"]["ocr"]["action"] == "keep_native"
+    assert payload["text_flows"][0]["metadata"]["content_sources"] == ["native_pdf"]
     assert result.report_markdown.is_file()
+    assert "keep_native" in result.report_markdown.read_text(encoding="utf-8")
