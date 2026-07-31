@@ -207,6 +207,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             source, f"{args.provider}-translation"
         )
         provider: TranslationProvider | None = None
+        result = None
+        primary_error: BaseException | None = None
         try:
             provider = create_translation_provider(
                 args.provider,
@@ -227,11 +229,23 @@ def main(argv: Sequence[str] | None = None) -> None:
                 max_attempts=args.max_attempts,
                 requests_per_second=args.requests_per_second,
             )
-        except (FileNotFoundError, ValueError, RuntimeError) as exc:
-            parser.error(str(exc))
-        finally:
-            if isinstance(provider, CloseableTranslationProvider):
+        except BaseException as exc:
+            primary_error = exc
+
+        cleanup_failed = False
+        if isinstance(provider, CloseableTranslationProvider):
+            try:
                 provider.close()
+            except BaseException:
+                cleanup_failed = True
+
+        if primary_error is not None:
+            if isinstance(primary_error, (FileNotFoundError, ValueError, RuntimeError)):
+                parser.error(str(primary_error))
+            raise primary_error.with_traceback(primary_error.__traceback__) from None
+        if cleanup_failed:
+            parser.error("Translation provider cleanup failed")
+        assert result is not None
         status = "PASS" if result.report["passed"] else "REVIEW"
         print(f"Translation complete: {result.output_dir}")
         print(f"Provider:             {args.provider}")

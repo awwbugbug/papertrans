@@ -1,3 +1,4 @@
+import traceback
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -341,10 +342,10 @@ def test_main_dispatches_selected_provider_to_generic_job(
     captured: dict[str, object] = {}
     class ProviderMarker:
         def __init__(self) -> None:
-            self.closed = False
+            self.close_count = 0
 
         def close(self) -> None:
-            self.closed = True
+            self.close_count += 1
 
     provider_marker = ProviderMarker()
     output = tmp_path / "output"
@@ -385,7 +386,7 @@ def test_main_dispatches_selected_provider_to_generic_job(
     assert captured["name"] == "kimi"
     assert captured["provider"] is provider_marker
     assert captured["output_dir"] == output
-    assert provider_marker.closed is True
+    assert provider_marker.close_count == 1
     assert "Quality gate:       PASS" in capsys.readouterr().out
 
 
@@ -395,10 +396,10 @@ def test_main_closes_provider_when_translation_job_fails(
 ) -> None:
     class CloseableProvider:
         def __init__(self) -> None:
-            self.closed = False
+            self.close_count = 0
 
         def close(self) -> None:
-            self.closed = True
+            self.close_count += 1
 
     provider = CloseableProvider()
     monkeypatch.setattr(
@@ -414,5 +415,143 @@ def test_main_closes_provider_when_translation_job_fails(
     with pytest.raises(SystemExit):
         main(["translate", "paper.pdf"])
 
-    assert provider.closed is True
+    assert provider.close_count == 1
     assert "sanitized_job_failure" in capsys.readouterr().err
+
+
+def test_raising_close_cannot_mask_parser_error_or_leak_cleanup_text(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cleanup_sentinel = "cleanup_failure_sensitive_text"
+
+    class RaisingCloseProvider:
+        def __init__(self) -> None:
+            self.close_count = 0
+
+        def close(self) -> None:
+            self.close_count += 1
+            raise RuntimeError(cleanup_sentinel)
+
+    provider = RaisingCloseProvider()
+    monkeypatch.setattr(
+        "papertrans.cli.create_translation_provider",
+        lambda *args, **kwargs: provider,
+    )
+
+    def fail_job(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("sanitized_job_failure")
+
+    monkeypatch.setattr("papertrans.cli.run_translation_job", fail_job)
+
+    with pytest.raises(BaseException) as exc_info:
+        main(["translate", "paper.pdf"])
+
+    captured = capsys.readouterr()
+    formatted = "".join(
+        traceback.format_exception(
+            exc_info.type,
+            exc_info.value,
+            exc_info.value.__traceback__,
+        )
+    )
+    assert isinstance(exc_info.value, SystemExit)
+    assert provider.close_count == 1
+    assert "sanitized_job_failure" in captured.err
+    assert cleanup_sentinel not in captured.out
+    assert cleanup_sentinel not in captured.err
+    assert cleanup_sentinel not in formatted
+
+
+def test_raising_close_cannot_mask_unexpected_primary_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleanup_sentinel = "cleanup_failure_sensitive_text"
+
+    class RaisingCloseProvider:
+        def __init__(self) -> None:
+            self.close_count = 0
+
+        def close(self) -> None:
+            self.close_count += 1
+            raise RuntimeError(cleanup_sentinel)
+
+    provider = RaisingCloseProvider()
+    monkeypatch.setattr(
+        "papertrans.cli.create_translation_provider",
+        lambda *args, **kwargs: provider,
+    )
+
+    def fail_job(*args: object, **kwargs: object) -> object:
+        raise LookupError("primary_unexpected_failure")
+
+    monkeypatch.setattr("papertrans.cli.run_translation_job", fail_job)
+
+    with pytest.raises(BaseException) as exc_info:
+        main(["translate", "paper.pdf"])
+
+    formatted = "".join(
+        traceback.format_exception(
+            exc_info.type,
+            exc_info.value,
+            exc_info.value.__traceback__,
+        )
+    )
+    assert isinstance(exc_info.value, LookupError)
+    assert str(exc_info.value) == "primary_unexpected_failure"
+    assert provider.close_count == 1
+    assert cleanup_sentinel not in formatted
+
+
+def test_cleanup_only_failure_is_sanitized_and_not_ignored(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cleanup_sentinel = "cleanup_failure_sensitive_text"
+    output = tmp_path / "output"
+
+    class RaisingCloseProvider:
+        def __init__(self) -> None:
+            self.close_count = 0
+
+        def close(self) -> None:
+            self.close_count += 1
+            raise RuntimeError(cleanup_sentinel)
+
+    provider = RaisingCloseProvider()
+    monkeypatch.setattr(
+        "papertrans.cli.create_translation_provider",
+        lambda *args, **kwargs: provider,
+    )
+    monkeypatch.setattr(
+        "papertrans.cli.run_translation_job",
+        lambda *args, **kwargs: SimpleNamespace(
+            output_dir=output,
+            output_pdf=output / "output.pdf",
+            protected_segments_json=output / "protected-segments.json",
+            provider_run_json=output / "provider-run.json",
+            translations_json=output / "translations.json",
+            layout_json=output / "layout.json",
+            report_json=output / "translation-report.json",
+            report={"passed": True},
+        ),
+    )
+
+    with pytest.raises(BaseException) as exc_info:
+        main(["translate", "paper.pdf", "--output-dir", str(output)])
+
+    captured = capsys.readouterr()
+    formatted = "".join(
+        traceback.format_exception(
+            exc_info.type,
+            exc_info.value,
+            exc_info.value.__traceback__,
+        )
+    )
+    assert isinstance(exc_info.value, SystemExit)
+    assert provider.close_count == 1
+    assert "Translation provider cleanup failed" in captured.err
+    assert cleanup_sentinel not in captured.out
+    assert cleanup_sentinel not in captured.err
+    assert cleanup_sentinel not in formatted
