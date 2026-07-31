@@ -20,6 +20,7 @@ from papertrans.translation.reliability import (
 )
 
 _PERMANENT_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
+_USAGE_ABSENT = object()
 
 
 class ChatCompletionsTranslationProvider:
@@ -74,7 +75,7 @@ class ChatCompletionsTranslationProvider:
         if not isinstance(response_payload, dict):
             raise RetryableProviderError(error_type="invalid_json_response")
 
-        usage = _parse_usage(response_payload.get("usage"), self.profile)
+        usage = _parse_usage(response_payload.get("usage", _USAGE_ABSENT), self.profile)
         choices = response_payload.get("choices")
         if not isinstance(choices, list) or not choices:
             raise RetryableProviderError(
@@ -166,7 +167,7 @@ def _http_error(status: int) -> RetryableProviderError | NonRetryableProviderErr
 
 
 def _parse_usage(raw_usage: object, profile: ProviderProfile) -> TranslationUsage | None:
-    if raw_usage is None:
+    if raw_usage is _USAGE_ABSENT:
         return None
     if not isinstance(raw_usage, Mapping):
         raise RetryableProviderError(error_type="invalid_usage")

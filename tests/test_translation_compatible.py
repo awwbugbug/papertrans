@@ -122,6 +122,45 @@ def test_present_malformed_usage_is_retryable(usage: object) -> None:
     assert exc_info.value.error_type == "invalid_usage"
 
 
+def test_present_null_usage_is_retryable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "normal": "中文⟦PT0001⟧",
+                                    "compact": "短文⟦PT0001⟧",
+                                },
+                                ensure_ascii=False,
+                            )
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": None,
+            },
+        )
+
+    provider = _provider(handler)
+
+    with pytest.raises(RetryableProviderError) as exc_info:
+        provider.translate(
+            [
+                TranslationRequest(
+                    segment_id="s1",
+                    text="Source ⟦PT0001⟧",
+                    protected_tokens=("⟦PT0001⟧",),
+                )
+            ]
+        )
+
+    assert exc_info.value.error_type == "invalid_usage"
+
+
 @pytest.mark.parametrize("status", [400, 401, 402, 403, 404, 422])
 def test_permanent_http_status_is_non_retryable(status: int) -> None:
     provider = _provider(
