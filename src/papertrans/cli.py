@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -10,9 +11,30 @@ from papertrans.roundtrip import run_roundtrip
 from papertrans.translation import PROVIDER_NAMES, create_translation_provider
 from papertrans.translation_job import run_translation_job
 
+_ENVIRONMENT_VARIABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 
 def _default_output(source: Path, operation: str) -> Path:
     return source.parent / ".papertrans" / f"{source.stem}-{operation}"
+
+
+def _validate_translate_args(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    if args.api_key_env is not None and not _ENVIRONMENT_VARIABLE_NAME.fullmatch(
+        args.api_key_env
+    ):
+        parser.error("--api-key-env must be a valid environment variable name")
+    if args.provider == "mock" and args.model is not None:
+        parser.error("--model is not valid with provider mock")
+    if args.provider != "mock" and args.length_factor is not None:
+        parser.error("--length-factor is only valid with provider mock")
+    if args.provider != "compatible" and (
+        args.base_url is not None or args.api_key_env is not None
+    ):
+        parser.error(
+            "--base-url and --api-key-env are only valid with provider compatible"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -80,7 +102,6 @@ def build_parser() -> argparse.ArgumentParser:
     translate_parser.add_argument(
         "--length-factor",
         type=float,
-        default=1.0,
         help="Mock translation length multiplier",
     )
     translate_parser.add_argument(
@@ -137,6 +158,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(f"Quality report:     {result.report_json}")
         print(f"Quality gate:       {status}")
     elif args.command == "translate":
+        _validate_translate_args(parser, args)
         source = args.input.expanduser().resolve()
         output = args.output_dir or _default_output(
             source, f"{args.provider}-translation"
@@ -147,7 +169,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 model=args.model,
                 base_url=args.base_url,
                 api_key_env=args.api_key_env,
-                length_factor=args.length_factor,
+                length_factor=(
+                    1.0 if args.length_factor is None else args.length_factor
+                ),
                 timeout_seconds=args.timeout,
                 max_output_tokens=args.max_output_tokens,
             )

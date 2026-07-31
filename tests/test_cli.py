@@ -67,6 +67,79 @@ def test_parser_rejects_unknown_provider() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("arguments", "expected_error"),
+    [
+        (
+            ["--provider", "mock", "--model", "ignored-model"],
+            "--model is not valid with provider mock",
+        ),
+        (
+            ["--provider", "deepseek", "--length-factor", "1.1"],
+            "--length-factor is only valid with provider mock",
+        ),
+        (
+            ["--provider", "kimi", "--length-factor", "1.1"],
+            "--length-factor is only valid with provider mock",
+        ),
+        (
+            ["--provider", "compatible", "--length-factor", "1.1"],
+            "--length-factor is only valid with provider mock",
+        ),
+        (
+            [
+                "--provider",
+                "deepseek",
+                "--base-url",
+                "https://relay.test/v1",
+            ],
+            "--base-url and --api-key-env are only valid with provider compatible",
+        ),
+        (
+            ["--provider", "kimi", "--api-key-env", "KIMI_OVERRIDE"],
+            "--base-url and --api-key-env are only valid with provider compatible",
+        ),
+    ],
+)
+def test_main_rejects_provider_incompatible_options(
+    arguments: list[str],
+    expected_error: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        main(["translate", "paper.pdf", *arguments])
+
+    captured = capsys.readouterr()
+    assert expected_error in captured.err
+
+
+def test_main_rejects_secret_shaped_api_key_environment_name_without_echo(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sentinel = "sk-sensitive-value-123456"
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "translate",
+                "paper.pdf",
+                "--provider",
+                "compatible",
+                "--base-url",
+                "https://relay.test/v1",
+                "--model",
+                "cheap-model",
+                "--api-key-env",
+                sentinel,
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert "--api-key-env must be a valid environment variable name" in captured.err
+    assert sentinel not in captured.out
+    assert sentinel not in captured.err
+
+
 def test_main_dispatches_selected_provider_to_generic_job(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
