@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from types import TracebackType
 from typing import Any
 
 import httpx
@@ -40,7 +41,23 @@ class ChatCompletionsTranslationProvider:
         self.max_output_tokens = max_output_tokens
         self.cache_identity = profile.cache_identity(model)
         self._api_key = api_key
-        self._http_client = http_client or httpx.Client()
+        self._owns_http_client = http_client is None
+        self._http_client = http_client if http_client is not None else httpx.Client()
+
+    def __enter__(self) -> ChatCompletionsTranslationProvider:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._owns_http_client:
+            self._http_client.close()
 
     def translate(self, requests: list[TranslationRequest]) -> list[TranslationResult]:
         return [self._translate_one(request) for request in requests]

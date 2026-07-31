@@ -47,7 +47,7 @@ def test_compatible_requires_endpoint_model_and_environment_key() -> None:
         create_translation_provider(
             "compatible", base_url="https://example.test/v1", environ={}
         )
-    with pytest.raises(ValueError, match="PAPERTRANS_COMPATIBLE_API_KEY") as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         create_translation_provider(
             "compatible",
             base_url="https://example.test/v1",
@@ -55,7 +55,27 @@ def test_compatible_requires_endpoint_model_and_environment_key() -> None:
             environ={},
         )
 
-    assert "sk-" not in str(exc_info.value)
+    assert str(exc_info.value) == (
+        "Required API credential environment variable is not set"
+    )
+
+
+def test_missing_user_selected_environment_name_is_not_echoed() -> None:
+    sentinel = "PAPERTRANS_MISSING_KEY_987654321"
+
+    with pytest.raises(ValueError) as exc_info:
+        create_translation_provider(
+            "compatible",
+            base_url="https://example.test/v1",
+            model="custom",
+            api_key_env=sentinel,
+            environ={},
+        )
+
+    assert str(exc_info.value) == (
+        "Required API credential environment variable is not set"
+    )
+    assert sentinel not in str(exc_info.value)
 
 
 def test_named_provider_rejects_compatible_only_options() -> None:

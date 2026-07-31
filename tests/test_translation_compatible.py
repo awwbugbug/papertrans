@@ -364,3 +364,40 @@ def test_cache_identity_excludes_credentials() -> None:
 
     assert provider.cache_identity == DEEPSEEK_PROFILE.cache_identity("deepseek-v4-flash")
     assert "sentinel-key" not in json.dumps(provider.cache_identity)
+
+
+def test_provider_context_manager_closes_owned_http_client() -> None:
+    provider = ChatCompletionsTranslationProvider(
+        profile=DEEPSEEK_PROFILE,
+        api_key="sentinel-key",
+        model="deepseek-v4-flash",
+        timeout_seconds=30,
+        max_output_tokens=800,
+        http_client=None,
+    )
+    owned_client = provider._http_client
+
+    with provider as entered:
+        assert entered is provider
+        assert owned_client.is_closed is False
+
+    assert owned_client.is_closed is True
+
+
+def test_provider_close_does_not_close_injected_http_client() -> None:
+    injected_client = httpx.Client(
+        transport=httpx.MockTransport(lambda request: _success_response())
+    )
+    provider = ChatCompletionsTranslationProvider(
+        profile=DEEPSEEK_PROFILE,
+        api_key="sentinel-key",
+        model="deepseek-v4-flash",
+        timeout_seconds=30,
+        max_output_tokens=800,
+        http_client=injected_client,
+    )
+
+    provider.close()
+
+    assert injected_client.is_closed is False
+    injected_client.close()

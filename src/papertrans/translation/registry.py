@@ -111,7 +111,7 @@ def _reject_compatible_options(
 def _required_api_key(environment: Mapping[str, str], key_name: str) -> str:
     api_key = environment.get(key_name)
     if not api_key:
-        raise ValueError(f"Environment variable {key_name} is required")
+        raise ValueError("Required API credential environment variable is not set")
     return api_key
 
 

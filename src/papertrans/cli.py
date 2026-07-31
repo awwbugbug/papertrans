@@ -1,17 +1,43 @@
 from __future__ import annotations
 
 import argparse
+import math
 import re
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from papertrans import __version__
 from papertrans.inspect import inspect_pdf
 from papertrans.roundtrip import run_roundtrip
-from papertrans.translation import PROVIDER_NAMES, create_translation_provider
+from papertrans.translation import (
+    PROVIDER_NAMES,
+    CloseableTranslationProvider,
+    TranslationProvider,
+    create_translation_provider,
+)
 from papertrans.translation_job import run_translation_job
 
 _ENVIRONMENT_VARIABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class _SafeArgumentParser(argparse.ArgumentParser):
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        kwargs["allow_abbrev"] = False
+        super().__init__(*args, **kwargs)
+
+    def parse_known_args(
+        self,
+        args: Sequence[str] | None = None,
+        namespace: argparse.Namespace | None = None,
+    ) -> tuple[argparse.Namespace, list[str]]:
+        arguments = sys.argv[1:] if args is None else args
+        if any(
+            argument == "--api-key" or argument.startswith("--api-key=")
+            for argument in arguments
+        ):
+            self.error("API keys must be supplied through environment variables")
+        return super().parse_known_args(args, namespace)
 
 
 def _default_output(source: Path, operation: str) -> Path:
@@ -35,10 +61,27 @@ def _validate_translate_args(
         parser.error(
             "--base-url and --api-key-env are only valid with provider compatible"
         )
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        parser.error("--timeout must be finite and greater than 0")
+    if args.length_factor is not None and (
+        not math.isfinite(args.length_factor) or args.length_factor <= 0
+    ):
+        parser.error("--length-factor must be finite and greater than 0")
+    if (
+        not math.isfinite(args.requests_per_second)
+        or args.requests_per_second < 0
+    ):
+        parser.error(
+            "--requests-per-second must be finite and greater than or equal to 0"
+        )
+    if args.max_output_tokens <= 0:
+        parser.error("--max-output-tokens must be greater than 0")
+    if args.max_attempts <= 0:
+        parser.error("--max-attempts must be greater than 0")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _SafeArgumentParser(
         prog="papertrans",
         description="Layout-aware academic PDF translation toolkit",
     )
@@ -163,6 +206,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         output = args.output_dir or _default_output(
             source, f"{args.provider}-translation"
         )
+        provider: TranslationProvider | None = None
         try:
             provider = create_translation_provider(
                 args.provider,
@@ -185,6 +229,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             parser.error(str(exc))
+        finally:
+            if isinstance(provider, CloseableTranslationProvider):
+                provider.close()
         status = "PASS" if result.report["passed"] else "REVIEW"
         print(f"Translation complete: {result.output_dir}")
         print(f"Provider:             {args.provider}")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,3 +47,8 @@ class TranslationProvider(Protocol):
     name: str
 
     def translate(self, requests: list[TranslationRequest]) -> list[TranslationResult]: ...
+
+
+@runtime_checkable
+class CloseableTranslationProvider(Protocol):
+    def close(self) -> None: ...

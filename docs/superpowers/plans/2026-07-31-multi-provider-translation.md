@@ -1,5 +1,7 @@
 # Multi-Provider Translation Implementation Plan
 
+Status: Implemented; M4.3 complete. This file is retained as the historical execution plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add explicit `mock`, `deepseek`, `kimi`, and advanced `compatible` provider selection while preserving protected content, resumability, layout quality, and auditable usage reporting.

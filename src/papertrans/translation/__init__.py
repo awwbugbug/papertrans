@@ -1,4 +1,5 @@
 from papertrans.translation.base import (
+    CloseableTranslationProvider,
     TranslationProvider,
     TranslationRequest,
     TranslationResult,
@@ -36,6 +37,7 @@ from papertrans.translation.reliability import (
 
 __all__ = [
     "ChatCompletionsTranslationProvider",
+    "CloseableTranslationProvider",
     "DeepSeekTranslationProvider",
     "KimiTranslationProvider",
     "MockTranslationProvider",

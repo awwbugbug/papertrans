@@ -60,6 +60,70 @@ def test_translate_accepts_named_and_compatible_configuration() -> None:
     assert compatible.api_key_env == "RELAY_API_KEY"
 
 
+def test_all_cli_parsers_disable_long_option_abbreviation() -> None:
+    parser = build_parser()
+    command_parsers = parser._subparsers._group_actions[0].choices.values()
+
+    assert parser.allow_abbrev is False
+    assert all(
+        command_parser.allow_abbrev is False for command_parser in command_parsers
+    )
+
+
+def test_main_rejects_api_key_option_without_echoing_value(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sentinel = "PaperTransKey1234567890"
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "translate",
+                "paper.pdf",
+                "--provider",
+                "compatible",
+                "--base-url",
+                "https://relay.test/v1",
+                "--model",
+                "cheap-model",
+                "--api-key",
+                sentinel,
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert "API keys must be supplied through environment variables" in captured.err
+    assert sentinel not in captured.out
+    assert sentinel not in captured.err
+
+
+def test_main_reports_missing_selected_credential_environment_generically(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sentinel = "PAPERTRANS_MISSING_KEY_987654321"
+
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "translate",
+                "paper.pdf",
+                "--provider",
+                "compatible",
+                "--base-url",
+                "https://relay.test/v1",
+                "--model",
+                "cheap-model",
+                "--api-key-env",
+                sentinel,
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert "Required API credential environment variable is not set" in captured.err
+    assert sentinel not in captured.out
+    assert sentinel not in captured.err
+
+
 def test_parser_rejects_unknown_provider() -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(
@@ -140,13 +204,149 @@ def test_main_rejects_secret_shaped_api_key_environment_name_without_echo(
     assert sentinel not in captured.err
 
 
+@pytest.mark.parametrize(
+    ("arguments", "expected_error"),
+    [
+        (["--timeout", "nan"], "--timeout must be finite and greater than 0"),
+        (["--timeout", "inf"], "--timeout must be finite and greater than 0"),
+        (["--timeout", "0"], "--timeout must be finite and greater than 0"),
+        (["--timeout", "-1"], "--timeout must be finite and greater than 0"),
+        (
+            ["--length-factor", "nan"],
+            "--length-factor must be finite and greater than 0",
+        ),
+        (
+            ["--length-factor", "inf"],
+            "--length-factor must be finite and greater than 0",
+        ),
+        (
+            ["--length-factor", "0"],
+            "--length-factor must be finite and greater than 0",
+        ),
+        (
+            ["--length-factor", "-0.1"],
+            "--length-factor must be finite and greater than 0",
+        ),
+        (
+            ["--requests-per-second", "nan"],
+            "--requests-per-second must be finite and greater than or equal to 0",
+        ),
+        (
+            ["--requests-per-second", "inf"],
+            "--requests-per-second must be finite and greater than or equal to 0",
+        ),
+        (
+            ["--requests-per-second", "-1"],
+            "--requests-per-second must be finite and greater than or equal to 0",
+        ),
+        (
+            ["--max-output-tokens", "0"],
+            "--max-output-tokens must be greater than 0",
+        ),
+        (
+            ["--max-output-tokens", "-1"],
+            "--max-output-tokens must be greater than 0",
+        ),
+        (["--max-attempts", "0"], "--max-attempts must be greater than 0"),
+    ],
+)
+def test_main_rejects_invalid_numeric_options_before_provider_creation(
+    arguments: list[str],
+    expected_error: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[str] = []
+
+    def fake_create(*args: object, **kwargs: object) -> object:
+        calls.append("provider")
+        return object()
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        calls.append("job")
+        return SimpleNamespace(
+            output_dir=Path("output"),
+            output_pdf=Path("output/output.pdf"),
+            protected_segments_json=Path("output/protected-segments.json"),
+            provider_run_json=Path("output/provider-run.json"),
+            translations_json=Path("output/translations.json"),
+            layout_json=Path("output/layout.json"),
+            report_json=Path("output/translation-report.json"),
+            report={"passed": True},
+        )
+
+    monkeypatch.setattr(
+        "papertrans.cli.create_translation_provider",
+        fake_create,
+    )
+    monkeypatch.setattr(
+        "papertrans.cli.run_translation_job",
+        fake_run,
+    )
+
+    with pytest.raises(SystemExit):
+        main(["translate", "paper.pdf", *arguments])
+
+    assert expected_error in capsys.readouterr().err
+    assert calls == []
+
+
+def test_zero_requests_per_second_remains_valid(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+    output = tmp_path / "output"
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            output_dir=output,
+            output_pdf=output / "output.pdf",
+            protected_segments_json=output / "protected-segments.json",
+            provider_run_json=output / "provider-run.json",
+            translations_json=output / "translations.json",
+            layout_json=output / "layout.json",
+            report_json=output / "translation-report.json",
+            report={"passed": True},
+        )
+
+    monkeypatch.setattr(
+        "papertrans.cli.create_translation_provider",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr("papertrans.cli.run_translation_job", fake_run)
+
+    main(
+        [
+            "translate",
+            "paper.pdf",
+            "--requests-per-second",
+            "0",
+            "--output-dir",
+            str(output),
+        ]
+    )
+
+    assert captured["requests_per_second"] == 0.0
+    assert "Quality gate:       PASS" in capsys.readouterr().out
+
+
 def test_main_dispatches_selected_provider_to_generic_job(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     captured: dict[str, object] = {}
-    provider_marker = object()
+    class ProviderMarker:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    provider_marker = ProviderMarker()
     output = tmp_path / "output"
 
     def fake_create(name: str, **kwargs: object) -> object:
@@ -185,4 +385,34 @@ def test_main_dispatches_selected_provider_to_generic_job(
     assert captured["name"] == "kimi"
     assert captured["provider"] is provider_marker
     assert captured["output_dir"] == output
+    assert provider_marker.closed is True
     assert "Quality gate:       PASS" in capsys.readouterr().out
+
+
+def test_main_closes_provider_when_translation_job_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class CloseableProvider:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    provider = CloseableProvider()
+    monkeypatch.setattr(
+        "papertrans.cli.create_translation_provider",
+        lambda *args, **kwargs: provider,
+    )
+
+    def fail_job(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("sanitized_job_failure")
+
+    monkeypatch.setattr("papertrans.cli.run_translation_job", fail_job)
+
+    with pytest.raises(SystemExit):
+        main(["translate", "paper.pdf"])
+
+    assert provider.closed is True
+    assert "sanitized_job_failure" in capsys.readouterr().err

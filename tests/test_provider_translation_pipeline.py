@@ -149,8 +149,15 @@ def test_named_provider_pipeline_preserves_pdf_and_never_persists_key(
     with pymupdf.open(first.output_pdf) as translated_pdf:
         rendered_text = "".join(page.get_text() for page in translated_pdf)
     compact_rendered_text = re.sub(r"\s+", "", rendered_text)
-    for value in ("[1]", "https://example.org/model", "10ms"):
-        assert value in compact_rendered_text
+    expected_protected_counts = {
+        "[1]": 1,
+        "https://example.org/model": 1,
+        "10ms": 1,
+    }
+    assert {
+        value: compact_rendered_text.count(value)
+        for value in expected_protected_counts
+    } == expected_protected_counts
 
     first_usage = first.report["provider_execution"]["usage"]
     assert first_usage == {

@@ -1,18 +1,18 @@
 # M4.3 Multi-Provider Translation Design
 
 Date: 2026-07-31
-Status: Approved design, pending implementation plan
+Status: Implemented; M4.3 complete
 
 ## 1. Context
 
-PaperTrans has completed the M4.2 provider-neutral reliability baseline. Translation requests can
-already pass through protected-segment validation, atomic disk caching, retry, rate limiting, and
-resumability before translated text enters layout and PDF rendering.
+PaperTrans entered M4.3 with the M4.2 provider-neutral reliability baseline complete. Translation
+requests could already pass through protected-segment validation, atomic disk caching, retry, rate
+limiting, and resumability before translated text entered layout and PDF rendering.
 
-M4.3 will add real external translation providers without coupling PDF processing to one vendor.
-The first supported external providers are DeepSeek and Kimi. An advanced compatible-provider
-entry point will allow users to connect other services that implement a sufficiently compatible
-Chat Completions API.
+M4.3 adds real external translation providers without coupling PDF processing to one vendor. The
+implemented external providers are DeepSeek and Kimi. An advanced compatible-provider entry point
+allows users to connect other services that implement a sufficiently compatible Chat Completions
+API.
 
 ## 2. Goals
 
@@ -60,11 +60,11 @@ The existing `TranslationProvider` boundary remains provider-independent. Provid
 import PDF, layout, or rendering modules. The shared HTTP client must not know how translated text
 is placed on a page.
 
-The current mock-only job runner will be refactored into a provider-neutral translation job runner.
-Mock translation will use the same runner as external providers so there is only one artifact,
-layout, render, and QA path.
+The former mock-only job runner is now a provider-neutral translation job runner. Mock translation
+uses the same runner as external providers so there is only one artifact, layout, render, and QA
+path.
 
-Planned translation modules:
+Implemented translation modules:
 
 ```text
 translation/
@@ -290,7 +290,6 @@ tests.
 
 ## 13. Documentation and Milestone Update
 
-When implementation and quality gates pass, update `README.md`, `docs/BUILD_FLOW.md`, and
-`AGENTS.md` in the same change to mark M4.3 complete and record the exact supported providers,
-configuration variables, limitations, and next milestone. Until then, the repository milestone
-remains M4.2 complete and M4.3 in progress.
+Implementation and quality gates have passed. `README.md`, `docs/BUILD_FLOW.md`, and `AGENTS.md`
+mark M4.3 complete and record the exact supported providers, configuration variables,
+limitations, and M5 as the next milestone.
