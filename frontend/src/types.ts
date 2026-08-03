@@ -47,6 +47,9 @@ declare global {
         pick_pdf(): Promise<Omit<SourceDocument, "id"> | null>;
         pick_directory(): Promise<string | null>;
         open_output(jobId: string): Promise<boolean>;
+        minimize_window(): Promise<boolean>;
+        toggle_maximize_window(): Promise<boolean>;
+        close_window(): Promise<boolean>;
       };
     };
   }

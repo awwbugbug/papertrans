@@ -19,6 +19,7 @@ class DesktopBridge:
     def __init__(self, manager: DesktopJobManager) -> None:
         self._manager = manager
         self._window: Any | None = None
+        self._maximized = False
 
     def attach(self, window: Any) -> None:
         self._window = window
@@ -61,6 +62,29 @@ class DesktopBridge:
             return True
         return False
 
+    def minimize_window(self) -> bool:
+        if self._window is None:
+            return False
+        self._window.minimize()
+        return True
+
+    def toggle_maximize_window(self) -> bool:
+        if self._window is None:
+            return False
+        if self._maximized:
+            self._window.restore()
+            self._maximized = False
+        else:
+            self._window.maximize()
+            self._maximized = True
+        return self._maximized
+
+    def close_window(self) -> bool:
+        if self._window is None:
+            return False
+        self._window.destroy()
+        return True
+
 
 def main() -> None:
     import webview
@@ -93,6 +117,7 @@ def main() -> None:
         raise RuntimeError("PaperTrans local service failed to start")
 
     bridge = DesktopBridge(manager)
+    webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
     window = webview.create_window(
         "PaperTrans",
         f"http://127.0.0.1:{port}/?session={token}",
@@ -100,6 +125,9 @@ def main() -> None:
         width=1440,
         height=900,
         min_size=(1080, 720),
+        frameless=True,
+        easy_drag=False,
+        shadow=True,
         background_color="#faf9fe",
     )
     bridge.attach(window)
