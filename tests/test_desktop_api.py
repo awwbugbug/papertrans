@@ -31,6 +31,41 @@ def test_desktop_api_requires_session_and_accepts_pdf_upload(tmp_path: Path) -> 
     assert response.status_code == 200
     assert response.json()["name"] == "paper.pdf"
     assert response.json()["pageCount"] == 1
+    assert response.json()["id"]
+
+    preview = client.get(
+        f"/api/sources/{response.json()['id']}",
+        headers={"X-PaperTrans-Token": "test-session"},
+    )
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "application/pdf"
+    assert preview.headers["content-disposition"].startswith("inline;")
+    manager.shutdown()
+
+
+def test_desktop_api_registers_native_pdf_for_preview(tmp_path: Path) -> None:
+    source = tmp_path / "native-paper.pdf"
+    source.write_bytes(_pdf_bytes())
+    manager = DesktopJobManager(tmp_path / "jobs")
+    client = TestClient(
+        create_desktop_api(manager, session_token="test-session")
+    )
+
+    response = client.post(
+        "/api/sources",
+        headers={"X-PaperTrans-Token": "test-session"},
+        json={"path": str(source)},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == source.name
+    assert payload["id"]
+    preview = client.get(
+        f"/api/sources/{payload['id']}",
+        headers={"X-PaperTrans-Token": "test-session"},
+    )
+    assert preview.content == source.read_bytes()
     manager.shutdown()
 
 

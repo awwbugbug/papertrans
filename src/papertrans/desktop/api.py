@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 import shutil
+import threading
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
@@ -30,6 +31,10 @@ class StartJobPayload(BaseModel):
     ocr_model_dir: str | None = Field(default=None, alias="ocrModelDir")
 
 
+class RegisterSourcePayload(BaseModel):
+    path: str
+
+
 def create_desktop_api(
     manager: DesktopJobManager,
     *,
@@ -46,6 +51,16 @@ def create_desktop_api(
     app = FastAPI(title="PaperTrans Desktop API", docs_url=None, redoc_url=None)
     app.state.session_token = token
     app.state.manager = manager
+    sources: dict[str, Path] = {}
+    sources_lock = threading.Lock()
+
+    def register_source(path: str | Path) -> dict[str, object]:
+        resolved = Path(path).expanduser().resolve()
+        metadata = inspect_source(resolved)
+        source_id = uuid4().hex
+        with sources_lock:
+            sources[source_id] = resolved
+        return {"id": source_id, **metadata}
 
     @app.middleware("http")
     async def require_session(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -111,12 +126,32 @@ def create_desktop_api(
                     if size > MAX_UPLOAD_BYTES:
                         raise HTTPException(status_code=413, detail="PDF 不能超过 250 MB")
                     output.write(chunk)
-            return inspect_source(destination)
+            return register_source(destination)
         except Exception:
             shutil.rmtree(destination_dir, ignore_errors=True)
             raise
         finally:
             await file.close()
+
+    @app.post("/api/sources")
+    def register_native_source(payload: RegisterSourcePayload) -> dict[str, object]:
+        try:
+            return register_source(payload.path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/sources/{source_id}")
+    def preview_source(source_id: str) -> FileResponse:
+        with sources_lock:
+            path = sources.get(source_id)
+        if path is None or not path.is_file():
+            raise HTTPException(status_code=404, detail="源 PDF 不存在")
+        return FileResponse(
+            path,
+            media_type="application/pdf",
+            filename=path.name,
+            content_disposition_type="inline",
+        )
 
     @app.post("/api/jobs")
     def start_job(payload: StartJobPayload) -> dict[str, object]:

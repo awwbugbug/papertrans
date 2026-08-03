@@ -1,6 +1,7 @@
 export type ProviderName = "mock" | "deepseek" | "kimi" | "compatible";
 
 export type SourceDocument = {
+  id: string;
   path: string;
   name: string;
   size: number;
@@ -43,7 +44,7 @@ declare global {
   interface Window {
     pywebview?: {
       api?: {
-        pick_pdf(): Promise<SourceDocument | null>;
+        pick_pdf(): Promise<Omit<SourceDocument, "id"> | null>;
         pick_directory(): Promise<string | null>;
         open_output(jobId: string): Promise<boolean>;
       };

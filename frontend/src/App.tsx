@@ -1,5 +1,5 @@
-import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { artifactUrl, loadJob, loadSystemInfo, startJob, uploadPdf } from "./api";
+import { ChangeEvent, CSSProperties, DragEvent, KeyboardEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { artifactUrl, loadJob, loadSystemInfo, registerSource, sourceUrl, startJob, uploadPdf } from "./api";
 import type { JobState, ProviderName, SourceDocument, SystemInfo } from "./types";
 
 const FALLBACK_SYSTEM: SystemInfo = {
@@ -53,29 +53,71 @@ function Segmented({ value, onChange }: { value: InputMode; onChange: (value: In
   );
 }
 
-function UploadCard({ source, onPick, onDrop, onClear }: {
-  source: SourceDocument | null;
+function useStoredPercent(key: string, initial: number): [number, (value: number) => void] {
+  const [value, setValue] = useState(() => {
+    const saved = Number(window.localStorage.getItem(key));
+    return Number.isFinite(saved) && saved > 0 ? saved : initial;
+  });
+  const update = (next: number) => {
+    setValue(next);
+    window.localStorage.setItem(key, String(next));
+  };
+  return [value, update];
+}
+
+function ResizeHandle({ orientation, label, onDrag, onNudge }: {
+  orientation: "vertical" | "horizontal";
+  label: string;
+  onDrag: (coordinate: number) => void;
+  onNudge: (delta: number) => void;
+}) {
+  const coordinate = (event: PointerEvent<HTMLDivElement>) => (
+    orientation === "vertical" ? event.clientX : event.clientY
+  );
+  const finish = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    document.body.classList.remove("is-resizing");
+  };
+  const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    const backward = orientation === "vertical" ? event.key === "ArrowLeft" : event.key === "ArrowUp";
+    const forward = orientation === "vertical" ? event.key === "ArrowRight" : event.key === "ArrowDown";
+    if (!backward && !forward) return;
+    event.preventDefault();
+    onNudge(backward ? -2 : 2);
+  };
+  return (
+    <div
+      className={`resize-handle ${orientation}`}
+      role="separator"
+      aria-label={label}
+      aria-orientation={orientation}
+      tabIndex={0}
+      onKeyDown={handleKey}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        document.body.classList.add("is-resizing");
+        onDrag(coordinate(event));
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) onDrag(coordinate(event));
+      }}
+      onPointerUp={finish}
+      onPointerCancel={finish}
+    ><span /></div>
+  );
+}
+
+function UploadCard({ onPick, onDrop }: {
   onPick: () => void;
   onDrop: (file: File) => void;
-  onClear: () => void;
 }) {
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     const file = event.dataTransfer.files[0];
     if (file) onDrop(file);
   };
-  if (source) {
-    return (
-      <section className="glass-card file-card">
-        <div className="file-icon"><Icon name="picture_as_pdf" size={30} /></div>
-        <div className="file-copy">
-          <strong>{source.name}</strong>
-          <span>{source.pageCount ? `${source.pageCount} 页 · ` : ""}{formatBytes(source.size)}</span>
-        </div>
-        <button className="icon-button" aria-label="移除文件" onClick={onClear}><Icon name="close" /></button>
-      </section>
-    );
-  }
   return (
     <section className="glass-card upload-shell">
       <div
@@ -91,6 +133,38 @@ function UploadCard({ source, onPick, onDrop, onClear }: {
         <h2>拖入或点击选择 PDF</h2>
         <p>支持文本型、扫描型和混合型 PDF</p>
       </div>
+    </section>
+  );
+}
+
+function SourcePanel({ source, onPick, onDrop, onClear }: {
+  source: SourceDocument;
+  onPick: () => void;
+  onDrop: (file: File) => void;
+  onClear: () => void;
+}) {
+  const handleDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0];
+    if (file) onDrop(file);
+  };
+  return (
+    <section
+      className="glass-card source-panel"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={handleDrop}
+    >
+      <div className="document-toolbar">
+        <div className="document-identity">
+          <span className="document-kind"><Icon name="picture_as_pdf" size={17} /></span>
+          <div><strong title={source.name}>{source.name}</strong><span>{source.pageCount ? `${source.pageCount} 页 · ` : ""}{formatBytes(source.size)}</span></div>
+        </div>
+        <div className="document-actions">
+          <button className="icon-button" aria-label="更换 PDF" title="更换 PDF" onClick={onPick}><Icon name="swap_horiz" size={19} /></button>
+          <button className="icon-button" aria-label="移除文件" title="移除文件" onClick={onClear}><Icon name="close" size={19} /></button>
+        </div>
+      </div>
+      <embed className="pdf-frame" src={sourceUrl(source.id)} type="application/pdf" />
     </section>
   );
 }
@@ -185,7 +259,7 @@ function SettingsCard({ system, provider, onProvider, apiKey, onApiKey, model, o
 
 function ReadyPanel({ source, job }: { source: SourceDocument | null; job: JobState | null }) {
   if (job?.status === "running" || job?.status === "queued") return <ProgressPanel job={job} />;
-  if (job && ["completed", "review"].includes(job.status)) return <ResultPanel job={job} />;
+  if (job && ["completed", "review"].includes(job.status)) return <OutputPanel job={job} />;
   if (job?.status === "failed") return <FailurePanel job={job} />;
   if (source) {
     return (
@@ -229,7 +303,7 @@ function ProgressPanel({ job }: { job: JobState }) {
   );
 }
 
-function ResultPanel({ job }: { job: JobState }) {
+function OutputPanel({ job }: { job: JobState }) {
   return (
     <section className="preview-panel result-panel">
       <div className="result-toolbar">
@@ -239,10 +313,7 @@ function ResultPanel({ job }: { job: JobState }) {
           <Icon name="folder_open" size={18} /> 打开文件夹
         </button>
       </div>
-      <div className="pdf-result-grid">
-        <div><span>原始论文</span><embed src={artifactUrl(job.id, "source")} type="application/pdf" /></div>
-        <div><span>中文译文</span><embed src={artifactUrl(job.id, "output")} type="application/pdf" /></div>
-      </div>
+      <div className="output-document"><embed className="pdf-frame" src={artifactUrl(job.id, "output")} type="application/pdf" /></div>
       <div className="quality-strip">
         <span><Icon name="check_circle" size={17} /> 页面保持</span>
         <span><Icon name="check_circle" size={17} /> 无文字溢出</span>
@@ -263,12 +334,20 @@ function FailurePanel({ job }: { job: JobState }) {
 
 function TextWorkspace() {
   const [source, setSource] = useState("");
+  const [split, setSplit] = useStoredPercent("papertrans-text-split", 50);
+  const workspace = useRef<HTMLDivElement>(null);
+  const resize = (clientX: number) => {
+    const bounds = workspace.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setSplit(clamp(((clientX - bounds.left) / bounds.width) * 100, 32, 68));
+  };
   return (
-    <div className="text-workspace">
+    <div className="text-workspace" ref={workspace} style={{ "--text-split": `${split}%` } as CSSProperties}>
       <section className="glass-card text-pane">
         <div className="pane-title"><strong>原文</strong><span>{source.length} 字符</span></div>
         <textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="在这里输入或粘贴需要翻译的文本……" />
       </section>
+      <ResizeHandle orientation="vertical" label="调整原文与译文宽度" onDrag={resize} onNudge={(delta) => setSplit(clamp(split + delta, 32, 68))} />
       <section className="glass-card text-pane output-pane">
         <div className="pane-title"><strong>译文</strong><span className="beta-pill">下一阶段接入</span></div>
         <div className="text-empty"><Icon name="translate" size={34} /><p>输入文本后，这里将显示中文译文。</p></div>
@@ -319,7 +398,11 @@ export function App() {
   const [outputDir, setOutputDir] = useState(FALLBACK_SYSTEM.defaultOutputDir);
   const [job, setJob] = useState<JobState | null>(null);
   const [error, setError] = useState("");
+  const [sidebarSize, setSidebarSize] = useStoredPercent("papertrans-sidebar-size", 46);
+  const [sourceSize, setSourceSize] = useStoredPercent("papertrans-source-size", 60);
   const fileInput = useRef<HTMLInputElement>(null);
+  const workspace = useRef<HTMLDivElement>(null);
+  const leftStack = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadSystemInfo().then((info) => {
@@ -360,8 +443,12 @@ export function App() {
 
   const pickPdf = async () => {
     if (window.pywebview?.api?.pick_pdf) {
-      const picked = await window.pywebview.api.pick_pdf();
-      if (picked) setSource(picked);
+      try {
+        const picked = await window.pywebview.api.pick_pdf();
+        if (picked) setSource(await registerSource(picked.path));
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "PDF 导入失败");
+      }
     } else fileInput.current?.click();
   };
 
@@ -387,6 +474,23 @@ export function App() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "任务启动失败"); }
   };
 
+  const resizeSidebar = (clientX: number) => {
+    const bounds = workspace.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setSidebarSize(clamp(((clientX - bounds.left) / bounds.width) * 100, 36, 56));
+  };
+
+  const resizeSource = (clientY: number) => {
+    const bounds = leftStack.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setSourceSize(clamp(((clientY - bounds.top) / bounds.height) * 100, 38, 68));
+  };
+
+  const clearSource = () => {
+    setSource(null);
+    setJob(null);
+  };
+
   return (
     <div className="desktop-app">
       <Header view={view} onView={setView} />
@@ -395,14 +499,18 @@ export function App() {
           <div className="mode-row"><Segmented value={mode} onChange={setMode} /><span className="local-badge"><i /> 本地桌面运行</span></div>
           {error && <div className="error-banner"><Icon name="error" size={18} />{error}<button onClick={() => setError("")}><Icon name="close" size={17} /></button></div>}
           {mode === "text" ? <TextWorkspace /> : (
-            <div className="workspace-grid">
-              <div className="left-stack">
-                <UploadCard source={source} onPick={pickPdf} onDrop={acceptFile} onClear={() => { setSource(null); setJob(null); }} />
+            <div className="workspace-grid" ref={workspace} style={{ "--sidebar-size": `${sidebarSize}%` } as CSSProperties}>
+              <div className="left-stack" ref={leftStack} style={{ "--source-size": `${sourceSize}%` } as CSSProperties}>
+                {source
+                  ? <SourcePanel source={source} onPick={pickPdf} onDrop={acceptFile} onClear={clearSource} />
+                  : <UploadCard onPick={pickPdf} onDrop={acceptFile} />}
+                <ResizeHandle orientation="horizontal" label="调整源 PDF 与设置区域高度" onDrag={resizeSource} onNudge={(delta) => setSourceSize(clamp(sourceSize + delta, 38, 68))} />
                 <SettingsCard system={system} provider={provider} onProvider={setProvider} apiKey={apiKey} onApiKey={setApiKey}
                   model={model} onModel={setModel} baseUrl={baseUrl} onBaseUrl={setBaseUrl}
                   ocrEnabled={ocrEnabled} onOcr={setOcrEnabled} outputDir={outputDir}
                   onOutput={setOutputDir} onPickOutput={pickOutput} canStart={canStart} onStart={run} busy={busy} />
               </div>
+              <ResizeHandle orientation="vertical" label="调整源文件与译文区域宽度" onDrag={resizeSidebar} onNudge={(delta) => setSidebarSize(clamp(sidebarSize + delta, 36, 56))} />
               <ReadyPanel source={source} job={job} />
             </div>
           )}
@@ -420,4 +528,8 @@ export function App() {
 function formatBytes(value: number): string {
   if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, Number(value.toFixed(2))));
 }

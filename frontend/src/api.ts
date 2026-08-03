@@ -26,6 +26,14 @@ export async function uploadPdf(file: File): Promise<SourceDocument> {
   return api<SourceDocument>("/api/uploads", { method: "POST", body });
 }
 
+export async function registerSource(path: string): Promise<SourceDocument> {
+  return api<SourceDocument>("/api/sources", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+}
+
 export async function startJob(payload: Record<string, unknown>): Promise<JobState> {
   return api<JobState>("/api/jobs", {
     method: "POST",
@@ -41,4 +49,9 @@ export async function loadJob(jobId: string): Promise<JobState> {
 export function artifactUrl(jobId: string, kind: "source" | "output"): string {
   const token = sessionToken ? `?session=${encodeURIComponent(sessionToken)}` : "";
   return `/api/jobs/${jobId}/${kind}${token}`;
+}
+
+export function sourceUrl(sourceId: string): string {
+  const token = sessionToken ? `?session=${encodeURIComponent(sessionToken)}` : "";
+  return `/api/sources/${sourceId}${token}`;
 }
