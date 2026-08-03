@@ -15,19 +15,30 @@ const FALLBACK_SYSTEM: SystemInfo = {
 };
 
 type View = "translate" | "library" | "settings";
-type InputMode = "pdf" | "text";
 const SETTINGS_COLLAPSE_THRESHOLD = 78;
+const TEXT_COLLAPSE_THRESHOLD = 13;
 
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   return <span className="material-symbols-outlined" style={{ fontSize: size }}>{name}</span>;
 }
 
-function Header({ view, onView }: { view: View; onView: (view: View) => void }) {
+function Header({ view, onView, maximized, onMaximized }: {
+  view: View;
+  onView: (view: View) => void;
+  maximized: boolean;
+  onMaximized: (value: boolean) => void;
+}) {
+  const toggleMaximize = async () => {
+    const next = await window.pywebview?.api?.toggle_maximize_window?.();
+    if (typeof next === "boolean") onMaximized(next);
+  };
   return (
     <header
-      className="app-header pywebview-drag-region"
-      onDoubleClick={(event) => {
-        if (event.target === event.currentTarget) window.pywebview?.api?.toggle_maximize_window?.();
+      className="app-header"
+      onPointerDown={(event) => {
+        if (event.button !== 0 || event.target !== event.currentTarget) return;
+        if (event.detail === 2) void toggleMaximize();
+        else void window.pywebview?.api?.begin_window_drag?.();
       }}
     >
       <button className="brand" onClick={() => onView("translate")}>PaperTrans</button>
@@ -44,23 +55,31 @@ function Header({ view, onView }: { view: View; onView: (view: View) => void }) 
       </nav>
       <div className="window-controls" aria-label="窗口控制">
         <button aria-label="最小化" title="最小化" onClick={() => window.pywebview?.api?.minimize_window?.()}><Icon name="remove" size={17} /></button>
-        <button aria-label="最大化或还原" title="最大化或还原" onClick={() => window.pywebview?.api?.toggle_maximize_window?.()}><Icon name="crop_square" size={15} /></button>
+        <button aria-label="最大化或还原" title="最大化或还原" onClick={() => void toggleMaximize()}><Icon name={maximized ? "filter_none" : "crop_square"} size={15} /></button>
         <button className="close-window" aria-label="关闭" title="关闭" onClick={() => window.pywebview?.api?.close_window?.()}><Icon name="close" size={18} /></button>
       </div>
     </header>
   );
 }
 
-function Segmented({ value, onChange }: { value: InputMode; onChange: (value: InputMode) => void }) {
+function WindowResizeRegions({ enabled }: { enabled: boolean }) {
+  if (!enabled) return null;
+  const edges = ["north", "south", "west", "east", "northwest", "northeast", "southwest", "southeast"];
   return (
-    <div className="segmented" aria-label="输入类型">
-      <button className={value === "pdf" ? "selected" : ""} onClick={() => onChange("pdf")}>
-        <Icon name="picture_as_pdf" size={17} /> PDF 文件
-      </button>
-      <button className={value === "text" ? "selected" : ""} onClick={() => onChange("text")}>
-        <Icon name="text_fields" size={17} /> 文本
-      </button>
-    </div>
+    <>
+      {edges.map((edge) => (
+        <div
+          aria-hidden="true"
+          className={`window-resize-region ${edge}`}
+          key={edge}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            void window.pywebview?.api?.begin_window_resize?.(edge);
+          }}
+        />
+      ))}
+    </>
   );
 }
 
@@ -452,27 +471,60 @@ function FailurePanel({ job }: { job: JobState }) {
   );
 }
 
-function TextWorkspace() {
-  const [source, setSource] = useState("");
-  const [split, setSplit] = useStoredPercent("papertrans-text-split", 50);
-  const workspace = useRef<HTMLDivElement>(null);
-  const resize = (deltaX: number) => {
-    const bounds = workspace.current?.getBoundingClientRect();
-    if (!bounds) return;
-    setSplit((current) => clamp(current + (deltaX / bounds.width) * 100, 32, 68));
-  };
+function CollapsedTextBar({ title, summary, icon, onExpand }: {
+  title: string;
+  summary: string;
+  icon: string;
+  onExpand: () => void;
+}) {
   return (
-    <div className="text-workspace" ref={workspace} style={{ "--text-split": `${split}%` } as CSSProperties}>
-      <section className="glass-card text-pane">
-        <div className="pane-title"><strong>原文</strong><span>{source.length} 字符</span></div>
-        <textarea value={source} onChange={(event) => setSource(event.target.value)} placeholder="在这里输入或粘贴需要翻译的文本……" />
-      </section>
-      <ResizeHandle orientation="vertical" label="调整原文与译文宽度" onDrag={resize} onNudge={(delta) => setSplit(clamp(split + delta, 32, 68))} />
-      <section className="glass-card text-pane output-pane">
-        <div className="pane-title"><strong>译文</strong><span className="beta-pill">下一阶段接入</span></div>
-        <div className="text-empty"><Icon name="translate" size={34} /><p>输入文本后，这里将显示中文译文。</p></div>
-      </section>
-    </div>
+    <button type="button" className="glass-card text-collapsed-bar" onClick={onExpand}>
+      <span className="text-bar-title"><Icon name={icon} size={18} /><strong>{title}</strong></span>
+      <span className="text-bar-summary">{summary}</span>
+      <span className="text-bar-action">展开 <Icon name="expand_more" size={18} /></span>
+    </button>
+  );
+}
+
+function TextSourcePanel({ value, onChange, collapsed, onExpand }: {
+  value: string;
+  onChange: (value: string) => void;
+  collapsed: boolean;
+  onExpand: () => void;
+}) {
+  if (collapsed) {
+    return <CollapsedTextBar title="文本原文" summary={value ? `${value.length} 字符` : "可直接粘贴文本"} icon="text_fields" onExpand={onExpand} />;
+  }
+  return (
+    <section className="glass-card text-dock text-source-dock">
+      <div className="text-dock-header">
+        <span className="text-dock-title"><Icon name="text_fields" size={18} /><strong>文本原文</strong></span>
+        <span>{value.length} 字符</span>
+      </div>
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder="在这里输入或粘贴需要翻译的文本……" />
+    </section>
+  );
+}
+
+function TextOutputPanel({ hasSource, collapsed, onExpand }: {
+  hasSource: boolean;
+  collapsed: boolean;
+  onExpand: () => void;
+}) {
+  if (collapsed) {
+    return <CollapsedTextBar title="文本译文" summary={hasSource ? "等待翻译" : "暂无译文"} icon="translate" onExpand={onExpand} />;
+  }
+  return (
+    <section className="glass-card text-dock text-output-dock">
+      <div className="text-dock-header">
+        <span className="text-dock-title"><Icon name="translate" size={18} /><strong>文本译文</strong></span>
+        <span className="beta-pill">M7.2 接入</span>
+      </div>
+      <div className="text-dock-empty">
+        <Icon name="translate" size={28} />
+        <span>{hasSource ? "文本翻译接口将在下一子阶段接入。" : "输入文本后，这里显示中文译文。"}</span>
+      </div>
+    </section>
   );
 }
 
@@ -507,9 +559,9 @@ function SettingsPage({ system }: { system: SystemInfo }) {
 
 export function App() {
   const [view, setView] = useState<View>("translate");
-  const [mode, setMode] = useState<InputMode>("pdf");
   const [system, setSystem] = useState<SystemInfo>(FALLBACK_SYSTEM);
   const [source, setSource] = useState<SourceDocument | null>(null);
+  const [textSource, setTextSource] = useState("");
   const [provider, setProvider] = useState<ProviderName>("mock");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
@@ -520,16 +572,37 @@ export function App() {
   const [error, setError] = useState("");
   const [sidebarSize, setSidebarSize] = useStoredPercent("papertrans-sidebar-size", 46);
   const [sourceSize, setSourceSize] = useStoredPercent("papertrans-source-size", 60);
+  const [leftTextSize, setLeftTextSize] = useStoredPercent("papertrans-left-text-size", 22);
+  const [rightTextSize, setRightTextSize] = useStoredPercent("papertrans-right-text-size", 22);
   const [settingsCollapsed, setSettingsCollapsed] = useState(false);
+  const [leftTextCollapsed, setLeftTextCollapsed] = useState(false);
+  const [rightTextCollapsed, setRightTextCollapsed] = useState(false);
+  const [windowMaximized, setWindowMaximized] = useState(false);
+  const [nativeFrameReady, setNativeFrameReady] = useState(Boolean(window.pywebview?.api?.begin_window_resize));
   const fileInput = useRef<HTMLInputElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
-  const leftStack = useRef<HTMLDivElement>(null);
+  const leftColumn = useRef<HTMLDivElement>(null);
+  const rightColumn = useRef<HTMLDivElement>(null);
+  const leftLower = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadSystemInfo().then((info) => {
       setSystem(info);
       setOutputDir(info.defaultOutputDir);
     }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const markNativeReady = () => setNativeFrameReady(Boolean(window.pywebview?.api?.begin_window_resize));
+    const syncWindowState = (event: Event) => {
+      setWindowMaximized(Boolean((event as CustomEvent<{ maximized: boolean }>).detail?.maximized));
+    };
+    window.addEventListener("pywebviewready", markNativeReady);
+    window.addEventListener("papertrans-window-state", syncWindowState);
+    return () => {
+      window.removeEventListener("pywebviewready", markNativeReady);
+      window.removeEventListener("papertrans-window-state", syncWindowState);
+    };
   }, []);
 
   useEffect(() => {
@@ -601,6 +674,37 @@ export function App() {
     setSidebarSize((current) => clamp(current + (deltaX / bounds.width) * 100, 36, 56));
   };
 
+  const adjustTextSize = (
+    current: number,
+    deltaPercent: number,
+    collapsed: boolean,
+    setSize: Dispatch<SetStateAction<number>>,
+    setCollapsed: Dispatch<SetStateAction<boolean>>,
+  ) => {
+    if (collapsed) {
+      if (deltaPercent > 0) {
+        setCollapsed(false);
+        setSize(18);
+      }
+      return;
+    }
+    const next = clamp(current + deltaPercent, TEXT_COLLAPSE_THRESHOLD, 46);
+    setSize(next);
+    if (next <= TEXT_COLLAPSE_THRESHOLD && deltaPercent < 0) setCollapsed(true);
+  };
+
+  const resizeLeftText = (deltaY: number) => {
+    const bounds = leftColumn.current?.getBoundingClientRect();
+    if (!bounds) return;
+    adjustTextSize(leftTextSize, (deltaY / bounds.height) * 100, leftTextCollapsed, setLeftTextSize, setLeftTextCollapsed);
+  };
+
+  const resizeRightText = (deltaY: number) => {
+    const bounds = rightColumn.current?.getBoundingClientRect();
+    if (!bounds) return;
+    adjustTextSize(rightTextSize, (deltaY / bounds.height) * 100, rightTextCollapsed, setRightTextSize, setRightTextCollapsed);
+  };
+
   const adjustSourceSize = (deltaPercent: number) => {
     if (settingsCollapsed) {
       if (deltaPercent < 0) {
@@ -615,7 +719,7 @@ export function App() {
   };
 
   const resizeSource = (deltaY: number) => {
-    const bounds = leftStack.current?.getBoundingClientRect();
+    const bounds = leftLower.current?.getBoundingClientRect();
     if (!bounds) return;
     adjustSourceSize((deltaY / bounds.height) * 100);
   };
@@ -626,29 +730,40 @@ export function App() {
   };
 
   return (
-    <div className="desktop-app">
-      <Header view={view} onView={setView} />
+    <div className={windowMaximized ? "desktop-app window-maximized" : "desktop-app"}>
+      <WindowResizeRegions enabled={nativeFrameReady && !windowMaximized} />
+      <Header view={view} onView={setView} maximized={windowMaximized} onMaximized={setWindowMaximized} />
       {view === "translate" && (
         <main className="translate-page">
-          <div className="mode-row"><Segmented value={mode} onChange={setMode} /><span className="local-badge"><i /> 本地桌面运行</span></div>
           {error && <div className="error-banner"><Icon name="error" size={18} />{error}<button onClick={() => setError("")}><Icon name="close" size={17} /></button></div>}
-          {mode === "text" ? <TextWorkspace /> : (
-            <div className="workspace-grid" ref={workspace} style={{ "--sidebar-size": `${sidebarSize}%` } as CSSProperties}>
-              <div className={settingsCollapsed ? "left-stack settings-collapsed" : "left-stack"} ref={leftStack} style={{ "--source-size": `${sourceSize}%` } as CSSProperties}>
-                {source
-                  ? <SourcePanel source={source} onPick={pickPdf} onDrop={acceptFile} onClear={clearSource} />
-                  : <UploadCard onPick={pickPdf} onDrop={acceptFile} />}
+          <div className="workspace-grid" ref={workspace} style={{ "--sidebar-size": `${sidebarSize}%` } as CSSProperties}>
+            <div
+              className={leftTextCollapsed ? "workspace-column left-column text-collapsed" : "workspace-column left-column"}
+              ref={leftColumn}
+              style={{ "--text-dock-size": `${leftTextSize}%` } as CSSProperties}
+            >
+              <TextSourcePanel value={textSource} onChange={setTextSource} collapsed={leftTextCollapsed} onExpand={() => { setLeftTextCollapsed(false); setLeftTextSize(22); }} />
+              <ResizeHandle orientation="horizontal" label="调整文本原文与 PDF 区域高度" onDrag={resizeLeftText} onNudge={(delta) => adjustTextSize(leftTextSize, delta, leftTextCollapsed, setLeftTextSize, setLeftTextCollapsed)} />
+              <div className={settingsCollapsed ? "left-lower settings-collapsed" : "left-lower"} ref={leftLower} style={{ "--source-size": `${sourceSize}%` } as CSSProperties}>
+                {source ? <SourcePanel source={source} onPick={pickPdf} onDrop={acceptFile} onClear={clearSource} /> : <UploadCard onPick={pickPdf} onDrop={acceptFile} />}
                 <ResizeHandle orientation="horizontal" label="调整源 PDF 与设置区域高度" onDrag={resizeSource} onNudge={adjustSourceSize} />
                 <SettingsCard system={system} provider={provider} onProvider={setProvider} apiKey={apiKey} onApiKey={setApiKey}
-                  model={model} onModel={setModel} baseUrl={baseUrl} onBaseUrl={setBaseUrl}
-                  ocrEnabled={ocrEnabled} onOcr={setOcrEnabled} outputDir={outputDir}
-                  onOutput={setOutputDir} onPickOutput={pickOutput} canStart={canStart} onStart={run} busy={busy}
+                  model={model} onModel={setModel} baseUrl={baseUrl} onBaseUrl={setBaseUrl} ocrEnabled={ocrEnabled} onOcr={setOcrEnabled}
+                  outputDir={outputDir} onOutput={setOutputDir} onPickOutput={pickOutput} canStart={canStart} onStart={run} busy={busy}
                   collapsed={settingsCollapsed} onExpand={() => { setSettingsCollapsed(false); setSourceSize(60); }} />
               </div>
-              <ResizeHandle orientation="vertical" label="调整源文件与译文区域宽度" onDrag={resizeSidebar} onNudge={(delta) => setSidebarSize(clamp(sidebarSize + delta, 36, 56))} />
+            </div>
+            <ResizeHandle orientation="vertical" label="调整源文件与译文区域宽度" onDrag={resizeSidebar} onNudge={(delta) => setSidebarSize(clamp(sidebarSize + delta, 36, 56))} />
+            <div
+              className={rightTextCollapsed ? "workspace-column right-column text-collapsed" : "workspace-column right-column"}
+              ref={rightColumn}
+              style={{ "--text-dock-size": `${rightTextSize}%` } as CSSProperties}
+            >
+              <TextOutputPanel hasSource={Boolean(textSource)} collapsed={rightTextCollapsed} onExpand={() => { setRightTextCollapsed(false); setRightTextSize(22); }} />
+              <ResizeHandle orientation="horizontal" label="调整文本译文与翻译 PDF 区域高度" onDrag={resizeRightText} onNudge={(delta) => adjustTextSize(rightTextSize, delta, rightTextCollapsed, setRightTextSize, setRightTextCollapsed)} />
               <ReadyPanel source={source} job={job} />
             </div>
-          )}
+          </div>
           <input ref={fileInput} hidden type="file" accept="application/pdf,.pdf" onChange={(event: ChangeEvent<HTMLInputElement>) => {
             const file = event.target.files?.[0]; if (file) acceptFile(file);
           }} />

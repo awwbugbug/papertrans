@@ -50,6 +50,8 @@ declare global {
         minimize_window(): Promise<boolean>;
         toggle_maximize_window(): Promise<boolean>;
         close_window(): Promise<boolean>;
+        begin_window_drag(): Promise<boolean>;
+        begin_window_resize(edge: string): Promise<boolean>;
       };
     };
   }

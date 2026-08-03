@@ -13,16 +13,33 @@ import uvicorn
 
 from papertrans.desktop.api import create_desktop_api
 from papertrans.desktop.jobs import DesktopJobManager
+from papertrans.desktop.windowing import DesktopWindowFrame
 
 
 class DesktopBridge:
-    def __init__(self, manager: DesktopJobManager) -> None:
+    def __init__(
+        self,
+        manager: DesktopJobManager,
+        *,
+        frame_controller: DesktopWindowFrame | None = None,
+    ) -> None:
         self._manager = manager
         self._window: Any | None = None
         self._maximized = False
+        self._frame = frame_controller or DesktopWindowFrame()
 
     def attach(self, window: Any) -> None:
         self._window = window
+        self._frame.attach(window)
+
+    def initialize_window_frame(self) -> bool:
+        return self._frame.initialize()
+
+    def begin_window_drag(self) -> bool:
+        return self._frame.begin_move()
+
+    def begin_window_resize(self, edge: str) -> bool:
+        return self._frame.begin_resize(edge)
 
     def pick_pdf(self) -> dict[str, object] | None:
         import webview
@@ -77,7 +94,17 @@ class DesktopBridge:
         else:
             self._window.maximize()
             self._maximized = True
+        self._frame.set_maximized(self._maximized)
         return self._maximized
+
+    def set_window_state(self, maximized: bool) -> None:
+        self._maximized = maximized
+        self._frame.set_maximized(maximized)
+        if self._window is not None:
+            self._window.evaluate_js(
+                "window.dispatchEvent(new CustomEvent('papertrans-window-state', "
+                f"{{detail: {{maximized: {str(maximized).lower()}}}}}));"
+            )
 
     def close_window(self) -> bool:
         if self._window is None:
@@ -131,6 +158,9 @@ def main() -> None:
         background_color="#faf9fe",
     )
     bridge.attach(window)
+    window.events.shown += bridge.initialize_window_frame
+    window.events.maximized += lambda: bridge.set_window_state(True)
+    window.events.restored += lambda: bridge.set_window_state(False)
     try:
         webview.start(gui="edgechromium")
     finally:

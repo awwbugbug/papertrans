@@ -1,65 +1,57 @@
-# PaperTrans M7 desktop polish — Design QA
+# PaperTrans unified desktop workspace — Design QA
 
 ## Evidence
 
 - Source visual truth: `D:\project_for_codex\clean_translate_for_pdf\frontend_tamplate\stitch_papertrans_ui\screen.png`
-- User issue references:
-  - `C:\Users\47519\AppData\Local\Temp\codex-clipboard-271f7573-2958-404c-8dbc-3e3592a07923.png`
-  - `C:\Users\47519\AppData\Local\Temp\codex-clipboard-6a794233-e975-463a-97f7-6afe3fc8662b.png`
-  - `C:\Users\47519\AppData\Local\Temp\codex-clipboard-b58eef4c-a7bd-4122-a28c-36bcec3ee939.png`
-- Browser implementation: `D:\project_for_codex\clean_translate_for_pdf\tmp\design-qa-implementation-final.png`
-- Menu state: `D:\project_for_codex\clean_translate_for_pdf\tmp\design-qa-menu-final.png`
-- Collapsed settings state: `D:\project_for_codex\clean_translate_for_pdf\tmp\design-qa-collapsed-v2.png`
-- Native frameless-window capture: `D:\project_for_codex\clean_translate_for_pdf\tmp\desktop-frameless-v2.png`
-- Combined full-view comparison: `D:\project_for_codex\clean_translate_for_pdf\tmp\design-qa-comparison-final.png`
-- Combined focused comparison: `D:\project_for_codex\clean_translate_for_pdf\tmp\design-qa-focused-final.png`
-- Browser viewport: 1280 × 720 CSS px, device scale factor 1; implementation capture: 1280 × 720 px.
-- Source template: 1600 × 1280 px. It represents the same desktop translation workspace at a taller aspect ratio, so full-view comparison was fit without cropping and proportion differences caused by viewport height were treated as intentional responsive behavior.
-- Native capture: 1426 × 844 px on the Windows scaled desktop; used only to verify the absence of a native title bar and the visible Windows outer corner, not for pixel-level web-layout comparison.
-- State: PDF empty state, Mock provider, OCR ready, settings expanded; focused evidence also covers provider menu open and settings collapsed.
+- User header target: `C:\Users\47519\AppData\Local\Temp\codex-clipboard-3985eee4-2bf0-4ad0-b8f3-e73827a6ee3b.png`
+- Browser-rendered implementation: `C:\Users\47519\AppData\Local\Temp\papertrans-unified-browser.png`
+- Native desktop capture: `C:\Users\47519\AppData\Local\Temp\papertrans-native-unified.png`
+- Combined full-view comparison: `C:\Users\47519\AppData\Local\Temp\papertrans-design-qa-full.png`
+- Combined focused header comparison: `C:\Users\47519\AppData\Local\Temp\papertrans-design-qa-header.png`
+- Browser viewport: 1280 × 720 CSS px at device scale factor 1.25; implementation capture: 1280 × 720 px.
+- Source template: 1600 × 1280 px, normalized to 1280 × 1024 without cropping for the combined comparison.
+- User header target: 1920 × 60 px, normalized to 1280 × 40 for the focused comparison.
+- State: translation empty state, Mock provider, OCR ready, all five workspace surfaces expanded.
 
 ## Findings
 
 No actionable P0, P1, or P2 differences remain.
 
-- Fonts and typography: Inter with Microsoft YaHei fallback preserves the template's compact sans-serif hierarchy. The 23 px brand, 14 px navigation, and small form labels remain legible without changing the intended density.
-- Spacing and layout rhythm: the 50 px integrated header is visibly closer to the template; the three-surface workspace remains aligned. Cards retain 18 px outer radii. The collapsed settings bar is 54 px high and lets the PDF surface expand from about 342 px to 508 px at the QA viewport.
-- Colors and tokens: the pale lavender/peach ambient surface, white glass cards, restrained gray borders, and indigo active states remain consistent with the source.
-- Image and asset fidelity: the original ambient background asset and Material Symbols icon font are retained. No raster placeholders, CSS-drawn replacement icons, or low-resolution visual substitutions were introduced.
-- Copy and content: the local task area is now labelled `仓库`; existing Chinese translation, OCR, privacy, and output language remain consistent.
-- Interaction and accessibility: separators remain keyboard-operable. A pointer click without movement leaves the main split exactly unchanged (`571.2px 10px 628.8px` before and after). Switching translation, settings, PDF, and text states leaves the shell at `x=0`, width `1280`, and navigation at `x=562`. The custom provider control exposes combobox/listbox semantics and Escape/outside-click dismissal.
-- Rounded surfaces: the settings outer card clips its scrollable content at an 18 px radius while the inner scrollbar is hidden (`scrollbar-width: none`). The custom provider popup has a 13 px radius and 9 px option radii.
-- Desktop chrome: pywebview is configured as frameless with native shadow/Windows rounded-edge support. Integrated minimize, maximize/restore, and close controls occupy the header.
+- Fonts and typography: the compact sans-serif hierarchy, 23 px brand, 14 px navigation, and small form labels remain consistent with the source visual language. Text input, character count, empty states, and collapsed-bar labels remain legible.
+- Spacing and layout rhythm: the 50 px integrated header matches the compact target. The navigation center is exactly 640 px in the 1280 px viewport, independent of the 119.84 px brand and 132 px window controls. The new text surfaces intentionally extend the source template into a five-surface workspace without breaking the original left/right reading hierarchy.
+- Colors and visual tokens: the pale lavender/peach ambient background, white cards, restrained borders, indigo active states, 18 px card radii, and subtle shadows remain consistent with the Stitch source.
+- Image and asset fidelity: the existing background treatment and Material Symbols icon font are retained. No raster placeholders, handcrafted SVG substitutions, emoji, or CSS-drawn replacement icons were introduced.
+- Copy and content: the top navigation uses `仓库 / 翻译 / 设置`; PDF/text mode switching and the `本地桌面运行` label are absent. Text translation is explicitly marked as the next M7.2 integration rather than appearing falsely functional.
+- Interaction and accessibility: all three internal separators remain keyboard-operable. Both text surfaces collapse at the threshold to a 46 px bar and restore by click. The settings surface collapses to a 52 px bar and restores by click. Text input updates its character count. Navigation remains centered at 640 px and document width remains 1280 px across translation, settings, warehouse, and return-to-translation states.
+- Native window behavior: a live pywebview run verified left-edge resizing (width 1413 → 1333 px), maximize state, drag-down restore, and DWM corner preference changes from non-rounded while maximized to rounded after restore.
+- Console: no browser console errors were recorded.
 
 ## Focused Comparison
 
-The focused comparison was required because the original issues were localized and unreadable at full-view scale. It directly compares the reported scrollbar edge, native square provider popup, and tall/native header against the revised rounded card edge, rounded provider menu, and compact integrated header.
+The focused header comparison was required because the user-reported alignment issue occupies only 60 px and is not readable in the full-view board. It shows the source and implementation navigation centered on the same normalized viewport, with the implementation preserving the integrated controls on the right.
 
 ## Comparison History
 
-1. Initial issue evidence showed a native scrollbar occupying the settings card's right edge, a square native select popup, a taller header/native Python frame, and splitters that moved on pointer-down.
-   - Fixes: separated the rounded card shell from its hidden-scrollbar content; replaced the native provider select; changed splitter math to incremental pointer movement; enabled a frameless pywebview window and integrated controls.
-   - Post-fix evidence: the settings shell reports 18 px radius and hidden overflow; pointer-only click produces a 0 px width change; the native capture shows a frameless outer Windows corner.
-2. First custom-menu pass was still clipped by the settings card.
-   - Fix: rendered the listbox through a document portal so the card can continue clipping its own scrolling content.
-   - Post-fix evidence: all four provider options render outside the settings shell with rounded geometry.
-3. First portal pass extended to 727.4 px in a 720 px viewport.
-   - Fix: added viewport-aware upward placement with a conservative measured height allowance.
-   - Post-fix evidence: the final menu occupies y=322.8–492.4 px and is fully visible.
+1. User evidence showed navigation visually offset to the right and requested normal Windows resizing/restoration behavior plus a unified text/PDF workspace.
+   - Fixes: centered navigation independently of adjacent content; added native Windows resize/move handling and DWM corner-state synchronization; rebuilt the translation screen as five vertically and horizontally adjustable surfaces.
+   - Post-fix evidence: measured navigation center is 640 px in a 1280 px viewport; live window probes confirm edge resize, maximize, drag-down restore, and rounded restore state; the combined implementation capture shows all five surfaces in one screen.
+2. Interaction pass exercised threshold collapse and restoration for the source-text, translated-text, and settings surfaces.
+   - Post-fix evidence: source and translated text grids resolve to `46px 10px 578px` when collapsed; settings resolves to `412.763px 10px 52px`; all restore via their collapsed bars.
 
 ## Primary Interactions Tested
 
-- Pointer click on both resize affordances without drag.
-- Keyboard resizing and threshold collapse of the lower settings surface.
-- Click-to-expand restoration of settings.
-- Provider menu open, selection, rounded geometry, and viewport avoidance.
-- Translation/settings and PDF/text switching without horizontal shell movement.
-- Browser console: no errors.
-- Native desktop launch: frameless window and rounded Windows outer corner visible.
+- Native left-edge window resize.
+- Maximize followed by dragging the header downward to restore.
+- Rounded-corner preference in normal and maximized states.
+- Source-text and translated-text keyboard resize, threshold collapse, and click-to-expand.
+- Settings keyboard resize, threshold collapse, and click-to-expand.
+- Text entry and character-count update.
+- Translation/settings/warehouse navigation without horizontal shell shift.
+- Browser console error check.
 
 ## Follow-up Polish
 
-- P3: the maximize icon does not currently change glyph when the native window is maximized; behavior is correct, and the static glyph is acceptable for this milestone.
+- P3: the text translation result surface is intentionally an empty-state placeholder until M7.2 connects it to the existing provider/protection layer.
 
 ## Final Result
 
