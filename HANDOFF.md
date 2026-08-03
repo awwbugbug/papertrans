@@ -97,6 +97,23 @@ PP-OCRv6 OCR。
 - `frontend/src-tauri/target/`
 - `.pytest_cache/`、`.ruff_cache/`、`tmp/` 和其他缓存
 
+### 本次 E 盘精简包
+
+2026-08-03 的换机包使用以下约定：
+
+- 压缩包：`E:\PaperTrans-transfer-20260803.zip`
+- 独立交接副本：`E:\PaperTrans-HANDOFF.md`
+- 压缩包内只有一个根目录 `clean_translate_for_pdf/`。
+- 已包含 `.git/`、全部已提交源码、`models/`、`test_pdf/` 和 `frontend_tamplate/`。
+- 未包含 `.papertrans/`；历史任务和输出 PDF 如需保留，应另行复制。
+- 未包含 `.venv/`、`frontend/node_modules/`、`frontend/dist/`、
+  `frontend/src-tauri/target/`、`tmp/`、`.worktrees/` 和测试/代码检查缓存。
+- 未包含任何可用 API 密钥。
+
+新电脑上不要直接在 U 盘内运行项目。先把压缩包解压到本机 NTFS 磁盘的短路径，例如
+`D:\project_for_codex\clean_translate_for_pdf`，然后执行 `git status --short`；迁移快照应当是
+干净工作区。再按照下一节重建依赖。
+
 ## 6. 新电脑环境恢复
 
 已验证的旧电脑环境为：Python 3.11.9、Node.js 24.18.0、pnpm 11.9.0、Rust
