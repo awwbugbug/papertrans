@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import secrets
 import shutil
 import threading
@@ -8,6 +9,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,6 +51,17 @@ def create_desktop_api(
     model_root = Path(ocr_model_dir).resolve() if ocr_model_dir is not None else None
 
     app = FastAPI(title="PaperTrans Desktop API", docs_url=None, redoc_url=None)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:1420",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+            "tauri://localhost",
+        ],
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["X-PaperTrans-Token", "Content-Type"],
+    )
     app.state.session_token = token
     app.state.manager = manager
     sources: dict[str, Path] = {}
@@ -64,7 +77,7 @@ def create_desktop_api(
 
     @app.middleware("http")
     async def require_session(request: Request, call_next):  # type: ignore[no-untyped-def]
-        if request.url.path.startswith("/api/"):
+        if request.method != "OPTIONS" and request.url.path.startswith("/api/"):
             supplied = request.headers.get("X-PaperTrans-Token") or request.query_params.get(
                 "session"
             )
@@ -205,6 +218,18 @@ def create_desktop_api(
             filename=path.name,
             content_disposition_type="inline",
         )
+
+    @app.post("/api/jobs/{job_id}/open")
+    def open_job_output(job_id: str) -> dict[str, bool]:
+        try:
+            path = manager.output_dir(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="任务不存在") from exc
+        path.mkdir(parents=True, exist_ok=True)
+        if os.name != "nt":
+            raise HTTPException(status_code=501, detail="当前平台暂不支持打开文件夹")
+        os.startfile(path)  # type: ignore[attr-defined]
+        return {"opened": True}
 
     if frontend_dir is not None:
         static_root = Path(frontend_dir).resolve()

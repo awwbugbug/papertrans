@@ -1,55 +1,57 @@
-# PaperTrans normal-window top-border fix — Design QA
+# PaperTrans Academic Precision Restyle — Design QA
 
-## Evidence
+## Scope
 
-- Source visual truth and issue reference: `C:\Users\47519\AppData\Local\Temp\codex-clipboard-eda268a4-b7c0-4592-80df-85031e625d0c.png`
-- Final native implementation capture: `C:\Users\47519\AppData\Local\Temp\papertrans-border-final-full.png`
-- Final focused header capture: `C:\Users\47519\AppData\Local\Temp\papertrans-border-final-screen.png`
-- Combined focused comparison: `C:\Users\47519\AppData\Local\Temp\papertrans-black-border-comparison.png`
-- Issue reference size: 318 × 80 px.
-- Implementation capture size: 1080 × 720 px; focused comparison uses an unscaled 318 × 80 px crop from its top-left corner.
-- State: Windows normal/restored window, translation empty state, native DWM rounding enabled.
-- Density normalization: no resampling was applied to the focused 318 × 80 comparison crop.
+- Visual source: `frontend_tamplate/stitch_papertrans_ui_1/screen.png`
+- Implementation: the existing React/Tauri translation workspace
+- Constraint: preserve the five functional modules, splitters, collapsed bars, navigation, native
+  window controls, and current desktop behavior.
+- Final implementation capture: `artifacts/design-qa/implementation-academic-precision-final.png`
+- Side-by-side comparison: `artifacts/design-qa/comparison-academic-precision-final.png`
 
-## Findings
+## Capture normalization
 
-No actionable P0, P1, or P2 differences remain.
+- Reference bitmap: 1600 x 1280.
+- Implementation viewport and capture: 1600 x 1065 CSS pixels at device scale factor 1.
+- For direct visual comparison, the reference's top 1600 x 1065 region was paired with the
+  implementation capture without scaling. The lower 215 pixels of the taller reference are
+  intentionally outside the comparison.
+- State: empty translation workspace, Translate navigation active, settings expanded.
 
-- Fonts and typography: the PaperTrans brand retains the same family, weight, hierarchy, and antialiasing; the fix does not alter web content.
-- Spacing and layout rhythm: the corrected client surface begins at the rounded top edge without the prior dark inset strip. Header height, brand padding, navigation alignment, cards, and splitters are unchanged.
-- Colors and visual tokens: the pale lavender header now reaches the rounded window edge. The dark line visible in the issue reference is absent; the captured top-edge pixel is the header color `rgb(247, 244, 252)`.
-- Image and asset fidelity: no icons, background assets, fonts, or raster content changed.
-- Copy and content: no text or interface labels changed.
-- Window behavior: live native verification confirms normal state has no `WS_THICKFRAME`; left-edge resizing still changes the window width; the style is removed again after resizing; maximized state temporarily retains the style so drag-down restore continues to work; restored state returns to rounded corners with no permanent resize frame.
+## Visual findings
 
-## Full-View And Focused Comparison
+- The former Apple-like translucent surfaces and large radii are removed.
+- The implementation now follows the reference's neutral paper/grey surfaces, deep indigo accent,
+  one-pixel outlines, compact density, restrained 4-8 px radii, and minimal shadow.
+- Inter remains the primary UI typeface; Geist is used for compact labels and JetBrains Mono for
+  terse metadata. Material Symbols provides the shared icon language.
+- Header hierarchy, active navigation treatment, upload target, section bars, settings controls,
+  empty states, and status accents visually match the source language.
+- The five-module arrangement intentionally differs from the two-pane reference because the user
+  explicitly required the existing functionality and layout to remain unchanged.
+- Native Windows controls intentionally replace the reference's export action in the title bar.
 
-The source evidence is intentionally a focused 318 × 80 defect crop, so there is no source full-app frame for pixel-level comparison. The 1080 × 720 final native capture was inspected for surrounding regressions, while the required same-input visual comparison uses the exact affected top-left region. The comparison shows the issue strip on the left and the corrected uninterrupted lavender surface on the right.
+## Comparison history
 
-## Comparison History
+- P2: the settings area initially lacked the reference's explicit section heading and bilingual
+  metadata line. Fixed by adding the compact `翻译设置 / Translation Settings` header.
+- P3: upload and empty-state icons initially inherited a smaller generic icon size. Fixed with
+  scoped sizes that preserve hierarchy without enlarging unrelated controls.
+- No remaining P0, P1, or P2 visual defects were found in the final comparison.
 
-1. Initial reproduction showed `WS_THICKFRAME` permanently present (`0x160F0000`) and a dark non-client strip above the header.
-   - Minimal experiment: removed only `WS_THICKFRAME` and refreshed the native frame.
-   - Result: the dark strip disappeared, confirming the root cause.
-2. Removing the style permanently made maximized drag-down restoration fail.
-   - Fix: keep `WS_THICKFRAME` absent in normal state, enable it temporarily during native resize loops, retain it while maximized, and remove it on restore.
-   - Post-fix evidence: edge resize succeeds; normal and post-resize styles have no thick frame; maximized drag-down restores successfully; restored DWM corner preference is `ROUND`.
-3. The normal DWM outline still contributed a one-pixel dark edge after the thick frame was removed.
-   - Fix: set `DWMWA_BORDER_COLOR` to `DWMWA_COLOR_NONE` together with the window-state update.
-   - Post-fix evidence: the final top-edge pixel matches the lavender header and the focused comparison contains no dark line on the corrected implementation.
+## Interaction and regression checks
 
-## Primary Interactions Tested
-
-- Normal-window visual capture with rounded top edge.
-- Left-edge resize and post-resize style cleanup.
-- Maximize state and non-rounded DWM preference.
-- Dragging a maximized header downward to restore.
-- Restored rounded-corner preference and thick-frame cleanup.
-
-## Follow-up Polish
-
-No remaining P3 finding for this focused fix.
+- Navigation between Translate and Settings works without changing shell geometry.
+- Provider menu opens with the expected custom low-radius listbox.
+- Text entry updates the live character count.
+- Keyboard-accessible splitters resize and collapse/restore text, PDF, and settings surfaces.
+- Browser console checked with no errors or warnings in the verified state.
+- TypeScript typecheck passed.
+- Production frontend build passed.
+- Sites worker compatibility suite passed: 4 tests.
+- Python regression suite passed: 197 tests, with one upstream Starlette deprecation warning.
+- Ruff passed with no findings.
 
 ## Final Result
 
-final result: passed
+passed

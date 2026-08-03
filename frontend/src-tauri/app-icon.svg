@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PaperTrans">
+  <defs>
+    <linearGradient id="background" x1="72" y1="52" x2="440" y2="468" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#655FF2"/>
+      <stop offset="1" stop-color="#312BAF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="190" y1="158" x2="338" y2="350" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DCD9FF"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="20" y="20" width="472" height="472" rx="112" fill="url(#background)"/>
+  <path d="M150 112h142l70 70v218H150z" fill="white" opacity=".97"/>
+  <path d="M292 112v70h70" fill="#C9C5FF"/>
+  <path d="M197 213h118M197 257h118M197 301h72" stroke="#4A44CE" stroke-width="22" stroke-linecap="round"/>
+  <path d="M282 323l30 30 58-70" fill="none" stroke="url(#accent)" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

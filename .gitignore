@@ -12,6 +12,7 @@ node_modules/
 .papertrans/
 models/
 test_pdf/
+frontend_tamplate/
 tmp/
 .worktrees/
 *.log

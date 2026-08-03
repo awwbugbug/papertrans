@@ -3,12 +3,22 @@ import type { JobState, SourceDocument, SystemInfo } from "./types";
 const query = new URLSearchParams(window.location.search);
 const queryToken = query.get("session");
 if (queryToken) sessionStorage.setItem("papertrans-session", queryToken);
-const sessionToken = sessionStorage.getItem("papertrans-session");
+let sessionToken = sessionStorage.getItem("papertrans-session");
+let apiBase = "";
+
+export function configureDesktopApi(base: string, token: string): void {
+  apiBase = base.replace(/\/$/, "");
+  sessionToken = token;
+}
+
+function requestUrl(path: string): string {
+  return apiBase ? `${apiBase}${path}` : path;
+}
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (sessionToken) headers.set("X-PaperTrans-Token", sessionToken);
-  const response = await fetch(path, { ...init, headers });
+  const response = await fetch(requestUrl(path), { ...init, headers });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.detail || "本地服务暂时不可用");
@@ -48,10 +58,17 @@ export async function loadJob(jobId: string): Promise<JobState> {
 
 export function artifactUrl(jobId: string, kind: "source" | "output"): string {
   const token = sessionToken ? `?session=${encodeURIComponent(sessionToken)}` : "";
-  return `/api/jobs/${jobId}/${kind}${token}`;
+  return requestUrl(`/api/jobs/${jobId}/${kind}${token}`);
 }
 
 export function sourceUrl(sourceId: string): string {
   const token = sessionToken ? `?session=${encodeURIComponent(sessionToken)}` : "";
-  return `/api/sources/${sourceId}${token}`;
+  return requestUrl(`/api/sources/${sourceId}${token}`);
+}
+
+export async function openJobOutput(jobId: string): Promise<boolean> {
+  const result = await api<{ opened: boolean }>(`/api/jobs/${jobId}/open`, {
+    method: "POST",
+  });
+  return result.opened;
 }

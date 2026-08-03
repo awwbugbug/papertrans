@@ -88,7 +88,9 @@ def test_system_info_reports_ocr_only_when_local_model_directory_exists(
     manager.shutdown()
 
 
-def test_pdf_artifacts_are_served_inline_for_the_desktop_viewer(tmp_path: Path) -> None:
+def test_pdf_artifacts_are_served_inline_for_the_desktop_viewer(
+    tmp_path: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
     source = tmp_path / "paper.pdf"
     source.write_bytes(_pdf_bytes())
 
@@ -127,4 +129,31 @@ def test_pdf_artifacts_are_served_inline_for_the_desktop_viewer(tmp_path: Path) 
         assert response.headers["content-type"] == "application/pdf"
         assert response.headers["content-disposition"].startswith("inline;")
 
+    opened: list[Path] = []
+    monkeypatch.setattr("os.startfile", lambda path: opened.append(Path(path)))
+    response = client.post(
+        f"/api/jobs/{started['id']}/open",
+        headers={"X-PaperTrans-Token": "test-session"},
+    )
+    assert response.json() == {"opened": True}
+    assert opened == [manager.output_dir(started["id"])]
+
+    manager.shutdown()
+
+
+def test_tauri_origin_can_preflight_the_authenticated_api(tmp_path: Path) -> None:
+    manager = DesktopJobManager(tmp_path / "jobs")
+    client = TestClient(create_desktop_api(manager, session_token="test-session"))
+
+    response = client.options(
+        "/api/system",
+        headers={
+            "Origin": "http://localhost:1420",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "X-PaperTrans-Token",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:1420"
     manager.shutdown()

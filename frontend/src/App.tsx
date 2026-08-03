@@ -1,6 +1,7 @@
 import { ChangeEvent, CSSProperties, Dispatch, DragEvent, KeyboardEvent, PointerEvent, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { artifactUrl, loadJob, loadSystemInfo, registerSource, sourceUrl, startJob, uploadPdf } from "./api";
+import { artifactUrl, configureDesktopApi, loadJob, loadSystemInfo, openJobOutput, registerSource, sourceUrl, startJob, uploadPdf } from "./api";
+import { closeDesktopWindow, isTauriDesktop, loadDesktopSession, minimizeDesktopWindow, pickDesktopDirectory, pickDesktopPdf, toggleDesktopMaximize, watchDesktopMaximized } from "./desktop";
 import type { JobState, ProviderName, SourceDocument, SystemInfo } from "./types";
 
 const FALLBACK_SYSTEM: SystemInfo = {
@@ -29,18 +30,15 @@ function Header({ view, onView, maximized, onMaximized }: {
   onMaximized: (value: boolean) => void;
 }) {
   const toggleMaximize = async () => {
-    const next = await window.pywebview?.api?.toggle_maximize_window?.();
-    if (typeof next === "boolean") onMaximized(next);
+    onMaximized(await toggleDesktopMaximize());
   };
+  const navigation = {
+    library: { label: "仓库", icon: "library_books" },
+    translate: { label: "翻译", icon: "translate" },
+    settings: { label: "设置", icon: "settings" },
+  } as const;
   return (
-    <header
-      className="app-header"
-      onPointerDown={(event) => {
-        if (event.button !== 0 || event.target !== event.currentTarget) return;
-        if (event.detail === 2) void toggleMaximize();
-        else void window.pywebview?.api?.begin_window_drag?.();
-      }}
-    >
+    <header className="app-header" data-tauri-drag-region>
       <button className="brand" onClick={() => onView("translate")}>PaperTrans</button>
       <nav aria-label="主导航">
         {(["library", "translate", "settings"] as const).map((item) => (
@@ -49,37 +47,17 @@ function Header({ view, onView, maximized, onMaximized }: {
             className={view === item ? "nav-item active" : "nav-item"}
             onClick={() => onView(item)}
           >
-            {{ library: "仓库", translate: "翻译", settings: "设置" }[item]}
+            <Icon name={navigation[item].icon} size={19} />
+            <span>{navigation[item].label}</span>
           </button>
         ))}
       </nav>
       <div className="window-controls" aria-label="窗口控制">
-        <button aria-label="最小化" title="最小化" onClick={() => window.pywebview?.api?.minimize_window?.()}><Icon name="remove" size={17} /></button>
+        <button aria-label="最小化" title="最小化" onClick={() => void minimizeDesktopWindow()}><Icon name="remove" size={17} /></button>
         <button aria-label="最大化或还原" title="最大化或还原" onClick={() => void toggleMaximize()}><Icon name={maximized ? "filter_none" : "crop_square"} size={15} /></button>
-        <button className="close-window" aria-label="关闭" title="关闭" onClick={() => window.pywebview?.api?.close_window?.()}><Icon name="close" size={18} /></button>
+        <button className="close-window" aria-label="关闭" title="关闭" onClick={() => void closeDesktopWindow()}><Icon name="close" size={18} /></button>
       </div>
     </header>
-  );
-}
-
-function WindowResizeRegions({ enabled }: { enabled: boolean }) {
-  if (!enabled) return null;
-  const edges = ["north", "south", "west", "east", "northwest", "northeast", "southwest", "southeast"];
-  return (
-    <>
-      {edges.map((edge) => (
-        <div
-          aria-hidden="true"
-          className={`window-resize-region ${edge}`}
-          key={edge}
-          onPointerDown={(event) => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            void window.pywebview?.api?.begin_window_resize?.(edge);
-          }}
-        />
-      ))}
-    </>
   );
 }
 
@@ -327,6 +305,10 @@ function SettingsCard({ system, provider, onProvider, apiKey, onApiKey, model, o
   return (
     <section className="glass-card settings-card">
       <div className="settings-scroll-content">
+        <div className="settings-section-title">
+          <span><Icon name="tune" size={17} /><strong>翻译设置</strong></span>
+          <small>Translation Settings</small>
+        </div>
         <div className="form-grid">
           <label>
             <span>目标语言</span>
@@ -448,7 +430,7 @@ function OutputPanel({ job }: { job: JobState }) {
       <div className="result-toolbar">
         <div><span className={job.status === "completed" ? "success-dot" : "review-dot"} />
           <strong>{job.status === "completed" ? "翻译完成" : "需要检查"}</strong></div>
-        <button className="secondary-button" onClick={() => window.pywebview?.api?.open_output(job.id)}>
+        <button className="secondary-button" onClick={() => void openJobOutput(job.id)}>
           <Icon name="folder_open" size={18} /> 打开文件夹
         </button>
       </div>
@@ -578,7 +560,6 @@ export function App() {
   const [leftTextCollapsed, setLeftTextCollapsed] = useState(false);
   const [rightTextCollapsed, setRightTextCollapsed] = useState(false);
   const [windowMaximized, setWindowMaximized] = useState(false);
-  const [nativeFrameReady, setNativeFrameReady] = useState(Boolean(window.pywebview?.api?.begin_window_resize));
   const fileInput = useRef<HTMLInputElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const leftColumn = useRef<HTMLDivElement>(null);
@@ -586,23 +567,22 @@ export function App() {
   const leftLower = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    loadSystemInfo().then((info) => {
-      setSystem(info);
-      setOutputDir(info.defaultOutputDir);
-    }).catch(() => undefined);
+    loadDesktopSession()
+      .then((session) => {
+        if (session) configureDesktopApi(session.apiBase, session.sessionToken);
+        return loadSystemInfo();
+      })
+      .then((info) => {
+        setSystem(info);
+        setOutputDir(info.defaultOutputDir);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    const markNativeReady = () => setNativeFrameReady(Boolean(window.pywebview?.api?.begin_window_resize));
-    const syncWindowState = (event: Event) => {
-      setWindowMaximized(Boolean((event as CustomEvent<{ maximized: boolean }>).detail?.maximized));
-    };
-    window.addEventListener("pywebviewready", markNativeReady);
-    window.addEventListener("papertrans-window-state", syncWindowState);
-    return () => {
-      window.removeEventListener("pywebviewready", markNativeReady);
-      window.removeEventListener("papertrans-window-state", syncWindowState);
-    };
+    let unlisten: () => void = () => undefined;
+    void watchDesktopMaximized(setWindowMaximized).then((cleanup) => { unlisten = cleanup; });
+    return () => unlisten();
   }, []);
 
   useEffect(() => {
@@ -636,10 +616,10 @@ export function App() {
   };
 
   const pickPdf = async () => {
-    if (window.pywebview?.api?.pick_pdf) {
+    if (isTauriDesktop()) {
       try {
-        const picked = await window.pywebview.api.pick_pdf();
-        if (picked) setSource(await registerSource(picked.path));
+        const picked = await pickDesktopPdf();
+        if (picked) setSource(await registerSource(picked));
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : "PDF 导入失败");
       }
@@ -647,7 +627,7 @@ export function App() {
   };
 
   const pickOutput = async () => {
-    const picked = await window.pywebview?.api?.pick_directory?.();
+    const picked = await pickDesktopDirectory();
     if (picked) setOutputDir(picked);
   };
 
@@ -731,7 +711,6 @@ export function App() {
 
   return (
     <div className={windowMaximized ? "desktop-app window-maximized" : "desktop-app"}>
-      <WindowResizeRegions enabled={nativeFrameReady && !windowMaximized} />
       <Header view={view} onView={setView} maximized={windowMaximized} onMaximized={setWindowMaximized} />
       {view === "translate" && (
         <main className="translate-page">

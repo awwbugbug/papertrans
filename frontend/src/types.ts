@@ -39,20 +39,3 @@ export type JobState = {
     minimumFontSize?: number;
   };
 };
-
-declare global {
-  interface Window {
-    pywebview?: {
-      api?: {
-        pick_pdf(): Promise<Omit<SourceDocument, "id"> | null>;
-        pick_directory(): Promise<string | null>;
-        open_output(jobId: string): Promise<boolean>;
-        minimize_window(): Promise<boolean>;
-        toggle_maximize_window(): Promise<boolean>;
-        close_window(): Promise<boolean>;
-        begin_window_drag(): Promise<boolean>;
-        begin_window_resize(edge: string): Promise<boolean>;
-      };
-    };
-  }
-}

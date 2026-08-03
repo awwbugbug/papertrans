@@ -2,7 +2,7 @@
 
 PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目标不是简单地提取文字并覆盖回 PDF，而是建立可检查的文档中间表示，恢复阅读顺序，并在可读性约束下尽量保持原页面结构。
 
-当前版本已完成 **M7.1 Windows 桌面客户端骨架**：React 主界面通过本地 FastAPI 与 pywebview 接入已有 PDF 翻译流水线，支持原生文件/目录选择、PDF 拖入、provider 与模型配置、会话内 API 密钥、OCR 开关、任务进度及原文/译文结果预览。`mock` 仍是默认提供方且完全离线；M6.4 的混合页区域级 OCR 仲裁与全部质量门保持不变。
+当前版本已经完成 **M7.1 Windows 桌面客户端骨架**到 Tauri 2 的迁移与本机原生编译：React 主界面通过受会话令牌保护的本地 FastAPI 子进程接入已有 PDF 翻译流水线，Tauri 负责无边框窗口、原生文件/目录选择与窗口状态。PDF 拖入、provider 与模型配置、会话内 API 密钥、OCR 开关、任务进度及原文/译文结果预览保持不变；`mock` 仍是默认提供方且完全离线，M6.4 的混合页区域级 OCR 仲裁与全部质量门也不受迁移影响。
 
 ## 当前能力
 
@@ -56,12 +56,11 @@ python -m venv .venv
 .\.venv\Scripts\python -m pip install -e ".[dev,desktop]"
 cd .\frontend
 pnpm install
-pnpm build
 cd ..
 .\.venv\Scripts\papertrans-desktop
 ```
 
-桌面客户端目前以 Windows WebView2 打开本地界面。默认选择 `Mock 版式测试`，无需 API 密钥即可验证完整 PDF 链路；DeepSeek、Kimi 和兼容接口必须由用户显式选择。界面中的密钥仅存在于当前会话内，关闭应用后不会保存。
+Tauri 开发构建需要 Rust stable-msvc、Microsoft C++ Build Tools（勾选“使用 C++ 的桌面开发”）和 WebView2。`papertrans-desktop` 会自动载入已安装的 Visual Studio C++ 开发环境再启动 Tauri；桌面外壳随后启动 Python FastAPI 子进程，并为每次运行生成随机本地端口与会话令牌。默认选择 `Mock 版式测试`，无需 API 密钥即可验证完整 PDF 链路；DeepSeek、Kimi 和兼容接口必须由用户显式选择。界面中的密钥仅存在于当前会话内，关闭应用后不会保存。
 
 检查一份 PDF：
 

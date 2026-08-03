@@ -19,10 +19,11 @@ feature.
 
 ## Current milestone
 
-M7.1 is complete: the Windows desktop shell now connects native file/directory selection,
-provider and OCR configuration, local job state, and PDF results to the stable translation
-pipeline without weakening M4.3 protection, M5.1 layout safety, M5-C bounded context, or M6.4
-mixed-page OCR arbitration.
+M7.1 has a stable feature baseline and its Windows shell has been migrated from pywebview to
+Tauri 2. The React UI and token-protected loopback FastAPI service remain; Tauri owns native
+file/directory selection and window behavior. Native compilation and launch now pass; final user
+acceptance of window feel remains. The migration must not weaken M4.3 protection,
+M5.1 layout safety, M5-C bounded context, or M6.4 mixed-page OCR arbitration.
 
 - Native extraction, reading order, TextFlow recovery, and the `roundtrip` command are available.
 - `translate --provider mock` supports CJK line breaking, cross-region flow, compact candidates,
@@ -73,10 +74,14 @@ mixed-page OCR arbitration.
 - The practical mixed-page PP-OCRv6 and mock-translation gate passes with zero overflow, new
   sub-6pt text, translated overlap, or protected overlap. Extreme phone-photo scans are not a
   current blocking quality gate.
-- The M7.1 React/TypeScript UI runs in pywebview WebView2 over a token-protected loopback FastAPI
-  service. `mock` remains the default and the real PDF path uses `run_translation_job()`.
-- Text translation, persisted library state, PDF.js paragraph linkage, installers, and dedicated
-  table/formula OCR remain deferred.
+- The M7.1 React/TypeScript UI runs in a Tauri 2 WebView2 shell over a token-protected loopback
+  FastAPI child process. `mock` remains the default and the real PDF path uses
+  `run_translation_job()`. Do not reintroduce pywebview, WinForms, or raw Win32 frame patches.
+- Native Tauri compilation, launch, titlebar dragging, and no-black-border appearance have passed.
+  Explicit capability permissions cover custom minimize, maximize/restore, close, and dragging;
+  final user window-feel acceptance is the current gate. Text translation, persisted library state,
+  PDF.js paragraph linkage, packaged Python sidecar, installers, and dedicated table/formula OCR
+  remain deferred.
 - `translation-report.json` records aggregate context coverage and clipping counts only.
 - A real-paper offline Mock run covers 117 contextualized flows and passes the existing PDF gates
   with zero overflow, translated overlap, and protected overlap.
