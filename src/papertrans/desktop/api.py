@@ -151,7 +151,12 @@ def create_desktop_api(
             path = manager.source_path(job_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="任务不存在") from exc
-        return FileResponse(path, media_type="application/pdf", filename=path.name)
+        return FileResponse(
+            path,
+            media_type="application/pdf",
+            filename=path.name,
+            content_disposition_type="inline",
+        )
 
     @app.get("/api/jobs/{job_id}/output")
     def output_pdf(job_id: str) -> FileResponse:
@@ -159,7 +164,12 @@ def create_desktop_api(
             path = manager.output_pdf(job_id)
         except (KeyError, FileNotFoundError) as exc:
             raise HTTPException(status_code=404, detail="译文 PDF 尚不可用") from exc
-        return FileResponse(path, media_type="application/pdf", filename=path.name)
+        return FileResponse(
+            path,
+            media_type="application/pdf",
+            filename=path.name,
+            content_disposition_type="inline",
+        )
 
     if frontend_dir is not None:
         static_root = Path(frontend_dir).resolve()
