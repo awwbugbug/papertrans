@@ -19,9 +19,10 @@ feature.
 
 ## Current milestone
 
-M6.4 is complete: opt-in PaddleOCR now arbitrates sufficiently large image regions on mixed pages
-without replacing reliable native text or weakening M4.3 protection, M5.1 layout safety, or M5-C
-bounded translation context.
+M7.1 is complete: the Windows desktop shell now connects native file/directory selection,
+provider and OCR configuration, local job state, and PDF results to the stable translation
+pipeline without weakening M4.3 protection, M5.1 layout safety, M5-C bounded context, or M6.4
+mixed-page OCR arbitration.
 
 - Native extraction, reading order, TextFlow recovery, and the `roundtrip` command are available.
 - `translate --provider mock` supports CJK line breaking, cross-region flow, compact candidates,
@@ -40,8 +41,10 @@ bounded translation context.
   and remains best-effort.
 - Provider responses return normal and compact translations together. Fresh-call token usage and
   dated cost estimates are recorded; cache hits report zero new billable usage.
-- Credentials are environment-only and must never enter cache identity, artifacts, diagnostics, or
-  test fixtures. External providers receive protected segments and context, not the whole PDF.
+- CLI credentials remain environment-only. Desktop credentials remain in the current UI session
+  and are passed through an ephemeral provider environment mapping; they must never enter cache
+  identity, artifacts, diagnostics, frontend persistence, or test fixtures. External providers
+  receive protected segments and context, not the whole PDF.
 - Deterministic DeepSeek- and Kimi-shaped full-PDF tests cover protected content, usage/cost,
   cache resume, secret persistence, layout collision gates, and successful rendering.
 - Local repair deterministically tries normal and compact translations with controlled font
@@ -70,15 +73,18 @@ bounded translation context.
 - The practical mixed-page PP-OCRv6 and mock-translation gate passes with zero overflow, new
   sub-6pt text, translated overlap, or protected overlap. Extreme phone-photo scans are not a
   current blocking quality gate.
-- The next milestone is a lightweight M7 local UI over the stable CLI pipeline. Dedicated
-  table/formula OCR remains deferred.
+- The M7.1 React/TypeScript UI runs in pywebview WebView2 over a token-protected loopback FastAPI
+  service. `mock` remains the default and the real PDF path uses `run_translation_job()`.
+- Text translation, persisted library state, PDF.js paragraph linkage, installers, and dedicated
+  table/formula OCR remain deferred.
 - `translation-report.json` records aggregate context coverage and clipping counts only.
 - A real-paper offline Mock run covers 117 contextualized flows and passes the existing PDF gates
   with zero overflow, translated overlap, and protected overlap.
 - Whole-document prompts, vector retrieval, automatic terminology mining, and cross-segment
   provider batches remain deferred.
-- `ocr-plan.json` uses schema `m6_ocr_plan_v2` and routes pages to `keep_native`, `run_ocr`,
-  `use_ocr`, `review`, or `skip_blank`. Every decision includes confidence and reason codes.
+- `ocr-plan.json` uses schema `m6_ocr_plan_v3` and routes pages to `keep_native`, `run_ocr`,
+  `use_ocr`, `use_mixed`, `review`, or `skip_blank`. Every decision includes confidence and reason
+  codes.
 - OCR is opt-in through `--ocr-backend paddleocr --ocr-model-dir <directory>`; the default path is
   model-free, and native pages must cause zero OCR calls.
 - OCR Region and TextFlow metadata use `content_source=paddleocr` and retain engine confidence,
@@ -96,8 +102,8 @@ bounded translation context.
 - The controlled ResNet page-2 raster baseline is CER 0.026003, token order 0.96702, coverage
   1.001282, 85 OCR line edges, and 10 final TextFlows. It is a reproducible proxy, not an authentic
   physical scan.
-- The next planned milestone is M6.4 authentic scan validation and region-level native/OCR
-  arbitration. Dedicated table/formula OCR and GUI remain deferred.
+- The next planned milestone is M7.2 text translation in the same window, followed by M7.3
+  PDF.js paragraph-level linked reading and selection.
 
 When the milestone changes, update this section and the build-flow status in the same change.
 

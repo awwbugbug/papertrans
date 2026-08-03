@@ -2,7 +2,7 @@
 
 PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目标不是简单地提取文字并覆盖回 PDF，而是建立可检查的文档中间表示，恢复阅读顺序，并在可读性约束下尽量保持原页面结构。
 
-当前版本已完成 **M6.4 混合页区域级 OCR 仲裁**：默认仍只使用原生文字；显式启用 PaddleOCR 后，除整页扫描件外，还会裁剪论文页内较大的图片区域做局部识别。原生文字优先保留；与原生文字重叠的 OCR 行会去重；只有满足行数、字符数和置信度门槛的正文型图片才会融合为 `use_mixed`，稀疏图表标签继续作为图片保护。`mock` 仍是默认提供方且完全离线。
+当前版本已完成 **M7.1 Windows 桌面客户端骨架**：React 主界面通过本地 FastAPI 与 pywebview 接入已有 PDF 翻译流水线，支持原生文件/目录选择、PDF 拖入、provider 与模型配置、会话内 API 密钥、OCR 开关、任务进度及原文/译文结果预览。`mock` 仍是默认提供方且完全离线；M6.4 的混合页区域级 OCR 仲裁与全部质量门保持不变。
 
 ## 当前能力
 
@@ -37,6 +37,8 @@ PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目�
 - `ocr-run.json` 记录调用页数、接受/拒绝行数和设备类型，不记录论文正文或模型绝对路径。
 - OCR 行合并边以 `ocr_same_paragraph` 写入 TextFlow 诊断；跨页宽编号 `0` 和栏编号 `1/2` 均被覆盖。
 - `inspect --ocr-reference <pdf>` 可输出 `ocr-quality.json`，记录 CER、词序相似度和字符覆盖率，不保存参考或识别正文。
+- 提供 Windows 桌面入口；本地随机端口使用会话令牌保护，API 密钥只保存在当前前端会话内，不写入任务产物、缓存或日志。
+- PDF 工作区已接入真实翻译任务；文本翻译、任务库持久化和段落级双栏联动阅读将在后续 M7 子阶段接入。
 
 ## 本地开发
 
@@ -47,6 +49,19 @@ python -m venv .venv
 .\.venv\Scripts\python -m pytest
 .\.venv\Scripts\python -m ruff check .
 ```
+
+### 运行桌面客户端
+
+```powershell
+.\.venv\Scripts\python -m pip install -e ".[dev,desktop]"
+cd .\frontend
+pnpm install
+pnpm build
+cd ..
+.\.venv\Scripts\papertrans-desktop
+```
+
+桌面客户端目前以 Windows WebView2 打开本地界面。默认选择 `Mock 版式测试`，无需 API 密钥即可验证完整 PDF 链路；DeepSeek、Kimi 和兼容接口必须由用户显式选择。界面中的密钥仅存在于当前会话内，关闭应用后不会保存。
 
 检查一份 PDF：
 
