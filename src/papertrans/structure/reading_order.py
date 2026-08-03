@@ -27,15 +27,39 @@ def _text(region: Region) -> str:
 
 
 def _body_font_size(page: Page) -> float:
-    sizes = [
-        region.style.font_size
-        for region in page.regions
-        if region.style
-        and region.style.font_size
-        and region.bbox.width >= page.width * 0.22
-        and region.type not in {RegionType.TITLE, RegionType.HEADER, RegionType.FOOTER}
-    ]
+    sizes: list[float] = []
+    for region in page.regions:
+        if (
+            region.style is None
+            or region.style.font_size is None
+            or region.bbox.width < page.width * 0.22
+            or region.type in {RegionType.TITLE, RegionType.HEADER, RegionType.FOOTER}
+        ):
+            continue
+        line_weight = _visual_line_count(region)
+        sizes.extend([region.style.font_size] * min(line_weight, 50))
     return float(median(sizes)) if sizes else 0.0
+
+
+def _visual_line_count(region: Region) -> int:
+    native_lines = region.metadata.get("native_lines")
+    if isinstance(native_lines, list) and native_lines:
+        centers: list[float] = []
+        for line in native_lines:
+            bbox = line.get("bbox") if isinstance(line, dict) else None
+            if isinstance(bbox, list) and len(bbox) == 4:
+                centers.append((float(bbox[1]) + float(bbox[3])) / 2)
+        if centers:
+            tolerance = max(1.0, (region.style.font_size or 0.0) * 0.35)
+            visual_lines = 1
+            previous = sorted(centers)[0]
+            for center in sorted(centers)[1:]:
+                if center - previous > tolerance:
+                    visual_lines += 1
+                previous = center
+            return visual_lines
+    font_size = region.style.font_size if region.style else None
+    return max(1, round(region.bbox.height / font_size)) if font_size else 1
 
 
 def _overlap_x(left: Region, right: Region) -> float:
@@ -171,25 +195,45 @@ def _is_text_from_accepted_ocr_background(page: Page, region: Region) -> bool:
 def _classify_table_text(page: Page, body_size: float) -> None:
     captions = [region for region in page.regions if region.type == RegionType.TABLE_CAPTION]
     for caption in captions:
+        table_top = max(0.0, caption.bbox.y0 - page.height * 0.35)
         table_bottom = min(page.height, caption.bbox.y1 + page.height * 0.35)
         for region in page.regions:
             if region is caption or not region.source_text or region.type != RegionType.PARAGRAPH:
                 continue
-            if not (caption.bbox.y1 - 2 <= region.bbox.y0 and region.bbox.y1 <= table_bottom):
+            if not (table_top <= region.bbox.y0 and region.bbox.y1 <= table_bottom):
                 continue
             if _overlap_x(region, caption) <= 0:
                 continue
-            is_table_sized = region.bbox.width <= caption.bbox.width * 0.9 or (
-                body_size > 0
-                and region.style is not None
-                and region.style.font_size is not None
-                and region.style.font_size < body_size * 0.92
-            )
-            if is_table_sized:
+            if _looks_like_table_text(region, caption, body_size):
                 region.type = RegionType.TABLE_TEXT
                 region.translatable = False
                 region.confidence = 0.78
-                region.metadata["structure_rule"] = "text_inside_table_below_caption"
+                relation = "above" if region.bbox.y1 <= caption.bbox.y0 + 2 else "below"
+                region.metadata["structure_rule"] = f"table_text_{relation}_caption"
+
+
+def _looks_like_table_text(region: Region, caption: Region, body_size: float) -> bool:
+    text = _text(region)
+    font_is_smaller = (
+        body_size > 0
+        and region.style is not None
+        and region.style.font_size is not None
+        and region.style.font_size < body_size * 0.92
+    )
+    if font_is_smaller:
+        return True
+
+    if region.bbox.width > caption.bbox.width * 0.9:
+        return False
+    numeric_count = len(re.findall(r"\d+(?:\.\d+)?", text))
+    word_count = len(re.findall(r"[A-Za-z]{2,}", text))
+    numeric_dense = numeric_count >= 3 and numeric_count >= word_count * 0.5
+    compact_label = (
+        len(text) <= 80
+        and word_count <= 10
+        and region.bbox.width <= caption.bbox.width * 0.45
+    )
+    return numeric_dense or compact_label
 
 
 def _classify_formulas(page: Page) -> None:
@@ -405,7 +449,7 @@ def recover_page_structure(page: Page) -> None:
         {
             "layout": "two_column" if two_columns else "single_column",
             "body_font_size": round(body_size, 3),
-            "structure_stage": "m1_heuristic_v1",
+            "structure_stage": "m1_heuristic_v2",
             "structure_confidence": 0.72 if two_columns else 0.6,
         }
     )
@@ -437,5 +481,5 @@ def recover_document_structure(document: Document) -> Document:
         recover_page_structure(page)
     _classify_reference_section(document)
     build_text_flows(document)
-    document.metadata["structure_stage"] = "m1_heuristic_v1"
+    document.metadata["structure_stage"] = "m1_heuristic_v2"
     return document

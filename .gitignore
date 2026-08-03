@@ -12,5 +12,6 @@ node_modules/
 .papertrans/
 models/
 test_pdf/
+tmp/
 .worktrees/
 *.log

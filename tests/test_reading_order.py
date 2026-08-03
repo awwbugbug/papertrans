@@ -140,6 +140,92 @@ def test_table_rows_below_caption_are_protected() -> None:
     assert by_id["row"].reading_order is None
 
 
+def test_table_rows_above_caption_are_protected_without_hiding_body_below() -> None:
+    page = Page(
+        number=1,
+        width=600,
+        height=800,
+        regions=[
+            _region(
+                "table-header",
+                "method train set aero bike bird boat mAP",
+                (50, 100, 550, 110),
+                font_size=7,
+            ),
+            _region(
+                "table-row",
+                "FRCN 07+12 77.0 78.1 69.3 70.0",
+                (50, 114, 550, 124),
+                font_size=7,
+            ),
+            _region(
+                "caption",
+                "Table 1. Detection average precision results.",
+                (50, 132, 550, 154),
+                font_size=9,
+            ),
+            _region(
+                "left-body",
+                "This normal body paragraph begins below the table caption and must translate.",
+                (50, 176, 280, 276),
+                font_size=10,
+            ),
+            _region(
+                "right-body",
+                "The second column is also prose rather than table content.",
+                (320, 176, 550, 276),
+                font_size=10,
+            ),
+        ],
+    )
+    for region in page.regions[:2]:
+        region.metadata["native_lines"] = [
+            {"bbox": [50 + index * 28, region.bbox.y0, 70 + index * 28, region.bbox.y1]}
+            for index in range(17)
+        ]
+
+    recover_page_structure(page)
+
+    by_id = {region.id: region for region in page.regions}
+    for region_id in ("table-header", "table-row"):
+        assert by_id[region_id].type == RegionType.TABLE_TEXT
+        assert by_id[region_id].translatable is False
+    for region_id in ("left-body", "right-body"):
+        assert by_id[region_id].type == RegionType.PARAGRAPH
+        assert by_id[region_id].translatable is True
+
+
+def test_body_sized_numeric_table_block_remains_protected() -> None:
+    page = Page(
+        number=1,
+        width=600,
+        height=800,
+        regions=[
+            _region("caption", "Table 2. Segmentation results.", (50, 100, 300, 125)),
+            _region(
+                "table-values",
+                "FCN-32s 63.8 42.7 31.8 48.3 FCN-16s 65.7 46.2 34.8 50.7",
+                (70, 140, 290, 210),
+                font_size=10,
+            ),
+            _region(
+                "body",
+                "This ordinary body paragraph contains model 3 and Section 5.2 references.",
+                (50, 400, 280, 520),
+                font_size=10,
+            ),
+        ],
+    )
+
+    recover_page_structure(page)
+
+    by_id = {region.id: region for region in page.regions}
+    assert by_id["table-values"].type == RegionType.TABLE_TEXT
+    assert by_id["table-values"].translatable is False
+    assert by_id["body"].type == RegionType.PARAGRAPH
+    assert by_id["body"].translatable is True
+
+
 def test_math_heavy_block_is_protected_as_formula() -> None:
     page = Page(
         number=1,
