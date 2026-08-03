@@ -13,7 +13,7 @@ class NativeWindowApi(Protocol):
 
     def begin_resize(self, handle: int, hit_test: int) -> None: ...
 
-    def set_rounded(self, handle: int, rounded: bool) -> None: ...
+    def set_maximized(self, handle: int, maximized: bool) -> None: ...
 
 
 _RESIZE_HIT_TESTS = {
@@ -51,7 +51,7 @@ class DesktopWindowFrame:
 
         def initialize_frame() -> None:
             self._native_api.enable_resizable_frame(handle)
-            self._native_api.set_rounded(handle, True)
+            self._native_api.set_maximized(handle, False)
 
         self._dispatch(initialize_frame)
         return True
@@ -75,7 +75,7 @@ class DesktopWindowFrame:
         handle = self._handle()
         if handle is None or self._native_api is None:
             return False
-        self._dispatch(lambda: self._native_api.set_rounded(handle, not maximized))
+        self._dispatch(lambda: self._native_api.set_maximized(handle, maximized))
         return True
 
     def _handle(self) -> int | None:
@@ -117,6 +117,8 @@ class _Win32NativeApi:
     _WM_NCLBUTTONDOWN = 0x00A1
     _HTCAPTION = 2
     _DWMWA_WINDOW_CORNER_PREFERENCE = 33
+    _DWMWA_BORDER_COLOR = 34
+    _DWMWA_COLOR_NONE = 0xFFFFFFFE
     _DWMWCP_DONOTROUND = 1
     _DWMWCP_ROUND = 2
 
@@ -158,12 +160,11 @@ class _Win32NativeApi:
 
     def enable_resizable_frame(self, handle: int) -> None:
         style = self._get_style(handle, self._GWL_STYLE)
-        style |= (
-            self._WS_THICKFRAME
-            | self._WS_MINIMIZEBOX
-            | self._WS_MAXIMIZEBOX
-            | self._WS_SYSMENU
-        )
+        style &= ~self._WS_THICKFRAME
+        style |= self._WS_MINIMIZEBOX | self._WS_MAXIMIZEBOX | self._WS_SYSMENU
+        self._apply_style(handle, style)
+
+    def _apply_style(self, handle: int, style: int) -> None:
         self._set_style(handle, self._GWL_STYLE, style)
         self._user32.SetWindowPos(
             handle,
@@ -180,20 +181,44 @@ class _Win32NativeApi:
         )
 
     def begin_move(self, handle: int) -> None:
-        self._begin_nonclient_action(handle, self._HTCAPTION)
+        self._begin_with_temporary_resize_frame(handle, self._HTCAPTION)
 
     def begin_resize(self, handle: int, hit_test: int) -> None:
-        self._begin_nonclient_action(handle, hit_test)
+        self._begin_with_temporary_resize_frame(handle, hit_test)
 
-    def set_rounded(self, handle: int, rounded: bool) -> None:
+    def _begin_with_temporary_resize_frame(self, handle: int, hit_test: int) -> None:
+        original_style = self._get_style(handle, self._GWL_STYLE)
+        if original_style & self._WS_THICKFRAME:
+            self._begin_nonclient_action(handle, hit_test)
+            return
+        self._apply_style(handle, original_style | self._WS_THICKFRAME)
+        try:
+            self._begin_nonclient_action(handle, hit_test)
+        finally:
+            self._apply_style(handle, original_style)
+
+    def set_maximized(self, handle: int, maximized: bool) -> None:
+        style = self._get_style(handle, self._GWL_STYLE)
+        if maximized:
+            style |= self._WS_THICKFRAME
+        else:
+            style &= ~self._WS_THICKFRAME
+        self._apply_style(handle, style)
         preference = ctypes.c_int(
-            self._DWMWCP_ROUND if rounded else self._DWMWCP_DONOTROUND
+            self._DWMWCP_DONOTROUND if maximized else self._DWMWCP_ROUND
         )
         self._dwmapi.DwmSetWindowAttribute(
             handle,
             self._DWMWA_WINDOW_CORNER_PREFERENCE,
             ctypes.byref(preference),
             ctypes.sizeof(preference),
+        )
+        border_color = ctypes.c_uint(self._DWMWA_COLOR_NONE)
+        self._dwmapi.DwmSetWindowAttribute(
+            handle,
+            self._DWMWA_BORDER_COLOR,
+            ctypes.byref(border_color),
+            ctypes.sizeof(border_color),
         )
 
     def _begin_nonclient_action(self, handle: int, hit_test: int) -> None:
