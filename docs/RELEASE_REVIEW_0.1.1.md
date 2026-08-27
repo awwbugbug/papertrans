@@ -4,18 +4,18 @@ Date: 2026-08-26
 
 ## 2026-08-27 pre-publication recheck
 
-The original review below is historical. Public binary release is currently on hold pending the
-licensing decision described here; the repository has no published release yet.
+The original review below is historical. The licensing decision was completed on 2026-08-27 and
+the public binary release is now published at:
+https://github.com/awwbugbug/papertrans/releases/tag/v0.1.1
 
-### Distribution licensing needs owner confirmation
+### Distribution licensing
 
 `pyproject.toml` and README declare Apache-2.0, but the repository contains no root LICENSE file.
 The installed and bundled PyMuPDF 1.28.0 metadata declares AGPL-3.0 or an Artifex commercial license,
 consistent with the [upstream licensing documentation](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright).
-The project declaration does not replace dependency licenses. Before distributing the installer,
-the owner must confirm the applicable licensing route, supply the required license/third-party
-notices, and establish the corresponding-source arrangements where applicable. No project
-relicensing or commercial-license assumption has been made by this review.
+The project declaration does not replace dependency licenses. The release follows the AGPL-3.0
+route, with the required third-party notices and corresponding-source arrangement documented in
+`THIRD_PARTY_NOTICES.md`.
 
 ### Frozen OCR regression found before publication
 
@@ -58,15 +58,15 @@ also passed in 38.78 seconds against the backend and models extracted from the f
   both screenshot URLs returned HTTP 200.
 
 These checks exercise the extracted installed resources, not an interactive installation on a
-separate clean Windows machine. The installer has not been uploaded or published because the
-distribution-licensing decision remains unresolved.
+separate clean Windows machine. The verified installer and checksum file are now attached to the
+public v0.1.1 release.
 
 ### Source and documentation checks
 
 - Both README screenshots were present locally but referenced under nonexistent filenames; the
   references now match the actual images, with no unmasked API key visible in either screenshot.
 - README now documents output-directory preferences, dark theme, bundled-versus-development OCR,
-  checksums, unsigned-installer warnings, current limitations, and the licensing hold.
+  checksums, unsigned-installer warnings, current limitations, and the AGPL third-party notices.
 - Python: 252 passed, one opt-in frozen-sidecar test skipped in the ordinary source-only run.
 - UI contracts: 40 passed. Sites compatibility: 4 passed. TypeScript and Vite build: passed.
 - Ruff, Rust release check, and Clippy with warnings denied: passed.
