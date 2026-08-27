@@ -92,6 +92,13 @@ if (Test-Path -LiteralPath $targetBinary) {
     --distpath $sidecarDist `
     --collect-all paddle `
     --collect-all paddleocr `
+    --collect-data paddlex `
+    --copy-metadata imagesize `
+    --copy-metadata opencv-contrib-python `
+    --copy-metadata pyclipper `
+    --copy-metadata pypdfium2 `
+    --copy-metadata python-bidi `
+    --copy-metadata shapely `
     $entryPoint
 if ($LASTEXITCODE -ne 0) { throw "Python sidecar build failed" }
 
@@ -135,6 +142,22 @@ finally {
             [System.StringComparison]::OrdinalIgnoreCase
         )
     } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+}
+
+# PaddleX loads OCR.yaml and validates ocr-core distribution metadata at runtime.
+# A healthy API alone cannot detect missing OCR resources in a frozen build.
+# Keep this real OCR gate mandatory even when the general suite is skipped.
+$previousReleaseSidecar = $env:PAPERTRANS_RELEASE_SIDECAR
+$previousReleaseModels = $env:PAPERTRANS_RELEASE_OCR_MODELS
+try {
+    $env:PAPERTRANS_RELEASE_SIDECAR = $builtSidecar
+    $env:PAPERTRANS_RELEASE_OCR_MODELS = $ocrModelRoot
+    & $python -m pytest (Join-Path $repository "tests\test_release_sidecar.py") -x
+    if ($LASTEXITCODE -ne 0) { throw "Packaged OCR regression gate failed; installer not built" }
+}
+finally {
+    $env:PAPERTRANS_RELEASE_SIDECAR = $previousReleaseSidecar
+    $env:PAPERTRANS_RELEASE_OCR_MODELS = $previousReleaseModels
 }
 
 Copy-Item -LiteralPath $builtSidecar -Destination $targetBinary

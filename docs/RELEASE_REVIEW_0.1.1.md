@@ -2,6 +2,58 @@
 
 Date: 2026-08-26
 
+## 2026-08-27 pre-publication recheck
+
+The original review below is historical. Public binary release is currently on hold pending the
+licensing decision described here; the repository has no published release yet.
+
+### Distribution licensing needs owner confirmation
+
+`pyproject.toml` and README declare Apache-2.0, but the repository contains no root LICENSE file.
+The installed and bundled PyMuPDF 1.28.0 metadata declares AGPL-3.0 or an Artifex commercial license,
+consistent with the [upstream licensing documentation](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright).
+The project declaration does not replace dependency licenses. Before distributing the installer,
+the owner must confirm the applicable licensing route, supply the required license/third-party
+notices, and establish the corresponding-source arrangements where applicable. No project
+relicensing or commercial-license assumption has been made by this review.
+
+### Frozen OCR regression found before publication
+
+The installer includes both PP-OCRv6 model directories, and their files match the local originals.
+However, an actual synthetic scanned-page job failed even though `/api/system` reported OCR ready.
+The same input succeeded from the source environment. A diagnostic-only copy of the frozen backend
+showed two packaging omissions:
+
+- PaddleX package data, including `configs/pipelines/OCR.yaml`, was missing.
+- Distribution metadata for `imagesize`, `opencv-contrib-python`, `pyclipper`, `pypdfium2`,
+  `python-bidi`, and `shapely` was missing, so PaddleX rejected its `ocr-core` dependency check.
+
+Adding only those resources to the diagnostic copy enabled real recognition of six lines from the
+synthetic scan. The release script now collects the same resources without modifying OCR algorithms
+or bypassing dependency validation. `tests/test_release_sidecar.py` reproduces the original failure
+against the actual executable and is now a mandatory build gate, including with `-SkipTests`.
+It exercises authenticated startup, real local OCR, Mock translation, PDF quality checks, and output
+retrieval in an isolated test directory, with no user documents or paid provider calls.
+
+The rebuilt frozen sidecar passed this complete regression in 32.23 seconds. The test tolerates
+transient read-connection failures during cold model initialization only within its fixed 180-second
+job deadline, checks that the process remains alive, and still requires successful OCR, translation,
+quality validation, and PDF retrieval. It never resubmits the translation request. Final installer
+extraction and checksum verification remain the last packaging checks.
+
+### Source and documentation checks
+
+- Both README screenshots were present locally but referenced under nonexistent filenames; the
+  references now match the actual images, with no unmasked API key visible in either screenshot.
+- README now documents output-directory preferences, dark theme, bundled-versus-development OCR,
+  checksums, unsigned-installer warnings, current limitations, and the licensing hold.
+- Python: 252 passed, one opt-in frozen-sidecar test skipped in the ordinary source-only run.
+- UI contracts: 40 passed. Sites compatibility: 4 passed. TypeScript and Vite build: passed.
+- Ruff, Rust release check, and Clippy with warnings denied: passed.
+- Production frontend dependency audit: no known vulnerabilities reported.
+- Tracked-file scan: no common secret-pattern matches, model weights, development caches, test PDFs,
+  or installer binaries. This is a bounded scan, not a guarantee that every possible secret is absent.
+
 ## Scope
 
 This review covers the Windows Tauri shell, packaged Python sidecar, NSIS output, dependency

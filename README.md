@@ -1,216 +1,220 @@
-# PaperTrans
+<div align="center">
 
-PaperTrans 是一个面向学术论文的保版式 PDF 翻译项目。项目目标不是简单地提取文字并覆盖回 PDF，而是建立可检查的文档中间表示，恢复阅读顺序，并在可读性约束下尽量保持原页面结构。
+# 📄 PaperTrans
 
-当前版本已经完成 **M7.5 桌面产品稳定化**并通过用户验收。`0.1.1` 冻结修正版使用 React/Tauri 2 桌面壳和自包含 Python sidecar，通过受会话令牌保护的随机本地端口接入既有 PDF/文本翻译路径；Windows NSIS 安装包已经可复现构建。
+### 保版式的学术论文 PDF 翻译工具
 
-## 当前能力
+*不是简单地提取文字覆盖回去，而是重建可检查的文档结构、恢复阅读顺序，*
+*并在可读性约束下尽量保持原页面的尺寸、页数、图表、公式与视觉层级。*
 
-- 从文本型 PDF 提取页面、文本块、图片块、坐标和基础字体信息。
-- 输出统一的 `document.json` 文档中间表示。
-- 生成原始页面 PNG 和带区域标记的布局预览图。
-- 生成 Markdown 检查报告。
-- 恢复基础双栏阅读顺序，并建立可追溯的段落级 `TextFlow`。
-- 记录跨栏、跨页和断词修复决策及其置信度。
-- 默认保护公式、图内文字、表内文字和参考文献。
-- 支持零翻译回环，按原始span基线、字号、颜色和字体类别重新绘制英文。
-- 自动检查页数、页面尺寸、链接、文本相似度和视觉差异。
-- 提供不调用外部 API 的伪中文翻译器和 `translate --provider mock` 命令。
-- 支持中文标点禁则、同一 TextFlow 跨原始区域流动、紧凑译文候选和可控字号回退。
-- 使用页面级占用检测避免译文之间及译文与公式、图表等受保护区域发生碰撞。
-- 对溢出、文字碰撞、新增低于 6pt 的文字、最小字号比例、链接及页面几何执行自动质量门禁。
-- 在渲染前独立复验布局；只有临时 PDF 通过全部质量门后才原子替换正式输出。
-- REVIEW 任务保留诊断、译文和缓存，但不创建或覆盖可能不安全的 `output.pdf`。
-- 输出 `protected-segments.json`，记录稳定占位符、保护类型、原值和恢复验证结果。
-- 对占位符缺失、重复及未知标记执行失败保护；验证未通过的译文不会进入 PDF 排版。
-- 翻译结果按提供方配置指纹和请求内容缓存；不同模型、提示词版本或 Mock 长度配置不会错误共享缓存。
-- 每个成功段落立即原子落盘，任务中途失败后可以从已完成段落继续。
-- 输出 `provider-run.json`，记录缓存命中、真实调用、重试、失败及限速等待统计。
-- 支持显式选择 `deepseek`、`kimi` 和 best-effort 的 `compatible` 提供方；一次 JSON 响应同时返回普通译文与紧凑译文。
-- 对 DeepSeek/Kimi 的新调用记录输入、缓存输入、输出令牌和按日期快照估算的费用；本地缓存命中不重复计费。
-- 每个段落请求最多携带 200 字符章节标题及前后各 600 字符相邻文本，不会把整份 PDF 作为单次请求上传。
-- 支持 `--glossary` JSON 术语表；只发送当前段命中的术语，语境与术语变化会自动隔离缓存。
-- `inspect` 输出 `ocr-plan.json`，按页记录原生字符量、文本质量、栅格图覆盖率、矢量对象数量、决策及置信度。
-- OCR 决策分为 `keep_native`、`run_ocr`、`use_ocr`、`review` 和 `skip_blank`，并直接标注在 layout overlay 右上角。
-- 未启用 OCR 时，`run_ocr` 或 `review` 页面会在 provider 调用前阻止翻译；启用后只有通过字符量与平均置信度门槛的页面进入 `use_ocr`。
-- 原生文字区域和 TextFlow 在 Document IR 中保留 `content_source` 与 `content_confidence` 来源信息。
-- `ocr-run.json` 记录调用页数、接受/拒绝行数和设备类型，不记录论文正文或模型绝对路径。
-- OCR 行合并边以 `ocr_same_paragraph` 写入 TextFlow 诊断；跨页宽编号 `0` 和栏编号 `1/2` 均被覆盖。
-- `inspect --ocr-reference <pdf>` 可输出 `ocr-quality.json`，记录 CER、词序相似度和字符覆盖率，不保存参考或识别正文。
-- 提供 Windows 桌面入口；无边框窗口保留标准的边缘缩放、最大化/还原、拖拽还原和 Windows 圆角，本地随机端口使用会话令牌保护。
-- PDF 与文本翻译已合并为同一可调工作区：左侧依次放置文本原文、原 PDF 与翻译设置，右侧放置文本译文与译文 PDF；各纵向区域可拖拽并折叠为长条。PDF 与文本翻译均已接入真实任务路径，仓库按 PDF/文本双栏展示，并可恢复已完成 PDF 到双栏阅读器。左右 PDF.js 阅读器可在设置中独立控制翻页同步和缩放同步；按住空格可直接拖动画布视口。
-- 仓库 PDF 任务显示从论文首页提取并规范化的论文标题，旧的文件名记录会自动补齐；文本任务显示最多 120 字符的原文摘要。两类内容都在单行内省略显示，文本完整内容仍只保存在对应的本地任务文件中，不复制进仓库索引。
-- 仓库任务支持经确认后删除。删除 PDF 历史只移除仓库记录，保留原始论文和已生成译文；删除文本历史会同步移除 `.papertrans/library/<task-id>/` 中由应用管理的原文与译文副本。运行中的任务禁止删除。
-- 设置页显示翻译缓存与临时导入副本的文件数和占用，可分别确认清理；缓存清理不会触碰任务、原始论文或生成译文，临时清理只删除没有被当前阅读器、运行任务或仓库引用的 `.papertrans/jobs/uploads/` 副本。翻译运行期间禁止清理缓存。
-- 默认点击主窗口“×”只隐藏到 Windows 系统托盘，本地后端与当前阅读状态继续保留；单击托盘图标或选择“显示 PaperTrans”可恢复窗口，托盘菜单“退出 PaperTrans”会真正退出并清理后端。设置页可开启“关闭主窗口时退出应用”，该非敏感偏好仅保存在当前用户的浏览器本地存储中。
-- 已完成 M7.3 段落联动的后端几何基础：受会话令牌保护的逐页阅读映射接口返回稳定 TextFlow ID、原文与实际排版采用的译文，以及原文区域框和译文行框；响应不暴露任务路径、字体路径或密钥。
-- 前端在 PDF.js 画布上叠加透明可选择文字层，并按已完成任务的当前页读取 `m7_reading_map_v1`；稳定段落框已经缩放到两侧页面表面，默认不可见，只有当前选中 flow 会显示且不会拦截文字选择。
-- PDF.js 重绘与普通 React 交互状态解耦；分栏或窗口连续缩放会在尺寸稳定后后台渲染，并只在完整画布与文字层就绪后原子替换可见页面，避免拖拽、选词和定位造成闪白。
-- PDF.js 阅读器已经使用连续页面栈：整篇论文只保留轻量页面占位，当前页前后各 2 页才挂载画布与文字层（最多 5 个页面表面）；视口占比最大的页面更新工具栏页码，按钮跳页不会与滚动观察器形成反馈循环，远页卸载时释放页面资源。
-- 跨页段落定位使用页面在连续滚动栈内的真实坐标，并在“跳到目标页—加载映射—段落居中”的完整过程持有程序化导航锁，避免中途页码观察事件清除高亮。Ctrl+滚轮先对现有页面做以鼠标为锚点的轻量缩放预览，停止输入后才执行一次高清原子重绘，不再让每个滚轮事件重启所有相邻页面。
-- 已完成有界逐页阅读映射缓存：左右阅读器共享当前任务的会话内缓存，加载范围是两侧当前页各自前后 2 页的并集（最多 10 页）；每页完成后立即可交互，快速滚动会取消过期请求，远页和任务切换会移除缓存，映射正文不进入浏览器持久化。
-- 连续翻页同步只广播稳定页码：视口占比最大的页面保持 80ms 后才更新工具栏并在同步开启时驱动另一侧；边界抖动会替换未提交候选，程序化跳页会取消候选并阻止反馈。关闭同步时两侧继续独立滚动，显式双击映射仍可跨页定位。
-- 翻译工作区不会因切换到仓库或设置而卸载；离开时只以 `visibility` 和 `inert` 隐藏并隔离交互，不使用会让 PDF.js 容器尺寸归零的 `display: none`。返回翻译页时复用原 PDF 文档、Canvas、逐页映射缓存和阅读器滚动位置。
-- 设置页的 DeepSeek、Kimi 和兼容接口均可打开统一配置窗口；API Key、模型和兼容接口地址按 provider 隔离，并由 Tauri 保存到当前 Windows 用户的凭据管理器。保存配置不会发起测试请求，密钥不会写入浏览器存储、任务记录、诊断或缓存。
-- 段落双击通过 PDF 坐标命中而不是覆盖透明按钮，单击和拖选不会触发定位；选中的稳定 flow ID 同时驱动左右几何高亮。即使关闭翻页同步，主动双击映射仍会将另一侧跳到该 flow 对应页面。
-- 联动状态记录点击来源，只允许另一侧自动滚动；目标已经完整可见时保持静止，否则在水平和垂直方向居中，并遵循系统“减少动画”设置。
-- 在单个映射段落内框选单词或短语时，文字选择与段落定位互斥，不会同时触发双栏跳转；系统不会伪造单词级双语对齐。该选择不持久化，也不会自动调用翻译 API。
-- 已完成显式“翻译所选”闭环：原文 PDF 的有效同段选区旁会显示主动触发按钮，加载、失败和译文在选区附近的页内浮层呈现，不占用工具栏且不挤压阅读区。接口单次最多 300 字符，复用 provider、占位符保护、重试、费用统计与可靠缓存，但使用独立提示词/缓存上下文且不创建仓库记录。
+<br>
 
-## 本地开发
+![version](https://img.shields.io/badge/version-0.1.1-1f108e)
+![platform](https://img.shields.io/badge/platform-Windows%20x64-0078d4)
+![desktop](https://img.shields.io/badge/desktop-Tauri%202%20%2B%20React%2019-24c8db)
+![backend](https://img.shields.io/badge/backend-Python%203.11%20%2B%20FastAPI-3776ab)
+![license](https://img.shields.io/badge/license-Apache--2.0-green)
+
+</div>
+
+---
+
+## 🖥️ 界面预览
+
+<p align="center">
+  <img src="docs/images/image-1787804316048.png" alt="PaperTrans 翻译工作区：文本原文 / 译文、PDF 拖入区、翻译设置" width="920">
+</p>
+
+<p align="center"><em>统一工作区 —— 左侧文本原文 / 原文 PDF / 翻译设置，右侧文本译文 / 译文 PDF，各区域可拖拽折叠。</em></p>
+
+<p align="center">
+  <img src="docs/images/image-1787804291603.png" alt="Fast R-CNN 论文原文与中文译文的逐页对照" width="920">
+</p>
+
+<p align="center"><em>原文与译文 PDF 逐页对照 —— 保持页面尺寸、页数、图表位置与视觉层级，段落可双击联动定位。</em></p>
+
+示例论文为 Ross Girshick 的 [Fast R-CNN](https://arxiv.org/abs/1504.08083)。截图仅展示应用效果；论文内容版权归原作者所有，示例译文仍需人工校对。
+
+---
+
+## ✨ 核心特性
+
+| 分类 | 能力 |
+|------|------|
+| 🌐 **多目标语言** | 简体中文、English、日本語、한국어、Français、Español、Deutsch、Русский；文本与 PDF 翻译均支持，按语言选字体、拉丁/西里尔语言按单词断行 |
+| 🔌 **多翻译服务** | DeepSeek、Kimi、**智谱AI (GLM)**、任意 OpenAI 兼容接口，以及无需密钥的本地 Mock 版式测试 |
+| 🔎 **模型自动检测** | 填入 API Key 后一键拉取该服务 `/models` 的可用模型，展开选择，也可手动输入 |
+| 📐 **保版式排版** | 全局版式约束求解：中文标点禁则、跨区域文本流、紧凑译文候选、可控字号回退、碰撞规避 |
+| 🖹 **双栏阅读联动** | 原文 / 译文 PDF.js 阅读器，逐页对照、段落双击互相定位、翻页与缩放可独立同步 |
+| 🧾 **段落级保护** | 引用、URL、DOI、公式、变量、单位以稳定占位符保护并逐段校验恢复，失败即拦截 |
+| 🔍 **可选本地 OCR** | 内置 PP-OCRv6 权重，仅对缺少可靠文字层的扫描/混合页启用，不联网下载 |
+| 🗂️ **本地仓库** | PDF / 文本任务本地历史，规范化论文标题、可恢复到双栏阅读器、经确认后删除 |
+| ⚙️ **个性化设置** | 自定义 PDF 输出文件夹、浅色 / 暗色主题，重启后保留偏好；默认关闭窗口后驻留系统托盘 |
+| 🔒 **隐私优先** | 本地解析优先，API Key 存 Windows 凭据管理器；只逐段发送受保护文本，绝不上传整份 PDF |
+| ✅ **自动质量门** | 溢出、碰撞、最小字号、页数、页面尺寸、链接全部通过后才原子替换正式输出 PDF |
+
+---
+
+## 🆕 本版本亮点
+
+- **目标语言可选**：8 种主流语言，覆盖文本翻译与整篇 PDF 翻译，按语言适配字体与断行。
+- **新增智谱AI (GLM) 服务**：默认 `glm-4.6`，端到端接入（含凭据管理器保存）。
+- **模型自动检测**：翻译设置卡与服务配置弹窗都可展开检测并选择模型。
+- **翻译服务记忆**：重启后仍停留在上次选择的服务，配置不再“消失”。
+- **输出与外观设置**：可在设置中选择默认输出文件夹、恢复默认路径，以及切换暗色主题。
+- **完整桌面打包**：统一应用、快捷方式、托盘与安装包图标，携带本地 OCR 运行时及检测 / 识别权重。
+- **一系列界面打磨**：空仓库双区域、下拉方向/间距/字号/滚动、仓库满铺、拖拽条圆角、去除冗余标题、修正控件点击命中区域等。
+
+---
+
+## 🚀 快速开始
+
+### 方式一：直接安装（推荐）
+
+安装包发布后，可在 [Releases](https://github.com/awwbugbug/papertrans/releases) 下载 `PaperTrans_0.1.1_x64-setup.exe`（约 350 MiB）运行安装。安装包已内置 PP-OCRv6 运行时与检测 / 识别权重，无需自行安装 Python 或额外下载模型。请下载 `.exe` 附件，而不是 GitHub 自动生成的源码压缩包。
+
+> 正式安装包暂未发布，仍需确认第三方组件的分发许可，详见下方“许可证与第三方组件”。
+
+可同时下载 `SHA256SUMS.txt`，在安装前核对文件完整性：
 
 ```powershell
+Get-FileHash .\PaperTrans_0.1.1_x64-setup.exe -Algorithm SHA256
+```
+
+> 当前安装包未做代码签名，Windows 可能出现未知发布者或 SmartScreen 提示。请先确认下载来自上述官方仓库且 SHA256 一致，再自行决定是否继续；哈希校验不等同于代码签名。
+
+首次使用时，在翻译设置中显式选择服务并配置自己的 API Key；**Mock 仅用于离线版式测试，不提供真实翻译**。设置页可修改默认输出文件夹和暗色主题。窗口默认关闭到托盘；通过托盘菜单退出，或在设置中启用关闭即退出。
+
+### 方式二：从源码运行开发版
+
+```powershell
+git clone https://github.com/awwbugbug/papertrans.git
+cd papertrans
 python -m venv .venv
 .\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -e ".[dev]"
-.\.venv\Scripts\python -m pytest
-.\.venv\Scripts\python -m ruff check .
-```
-
-### 运行桌面客户端
-
-```powershell
 .\.venv\Scripts\python -m pip install -e ".[dev,desktop]"
-cd .\frontend
-pnpm install
-cd ..
-.\.venv\Scripts\papertrans-desktop
 ```
 
-Tauri 开发构建需要 Rust stable-msvc、Microsoft C++ Build Tools（勾选“使用 C++ 的桌面开发”）和 WebView2。`papertrans-desktop` 会自动载入已安装的 Visual Studio C++ 开发环境、显式选择其中的 x64 MSVC 链接器，再启动 Tauri；这可避免 Git/Hermes 自带的同名 `link.exe` 抢占构建。桌面外壳随后启动 Python FastAPI 子进程，并为每次运行生成随机本地端口与会话令牌。默认选择 `Mock 版式测试`，无需 API 密钥即可验证完整 PDF 链路；DeepSeek、Kimi 和兼容接口必须由用户显式选择。桌面配置由 Windows 凭据管理器长期保存，启动时载入当前会话；密钥不会进入浏览器存储或 Python 任务产物。
+```powershell
+cd .\frontend
+corepack pnpm install
+corepack pnpm run desktop:dev
+```
 
-### 构建 Windows 安装包
+> 需要 Python 3.11+、Node.js 与可用的 Corepack/pnpm。桌面构建还需要 Rust stable-msvc、Microsoft C++ Build Tools（勾选“使用 C++ 的桌面开发”）与 WebView2。首次运行默认选择 **Mock 版式测试**，无需 API Key 即可验证文本型 PDF 的离线链路；之后会记住上次选择的服务。
+
+源码仓库不包含 OCR 权重。开发时若需 OCR，请安装 `.[ocr]` 依赖并自行准备本地模型；普通文本型 PDF 不需要 OCR。
+
+---
+
+## 🧩 处理管线
+
+```mermaid
+flowchart LR
+    A[PDF 输入] --> B[原生对象解析]
+    B --> C[Document IR]
+    C --> D[版面区域分类]
+    D --> E[阅读顺序 / 文本流恢复]
+    E --> F[段落分割 + 占位符保护]
+    F --> G[翻译服务]
+    G --> H[普通 / 紧凑译文候选]
+    H --> I[全局版式求解]
+    I --> J[PDF 内容重建]
+    J --> K[自动质量门]
+    K --> L[目标语言 PDF]
+    OCR[可选 PP-OCRv6] -. 扫描/混合页 .-> C
+```
+
+---
+
+## 🔌 翻译服务
+
+| 服务 | 默认模型 | 密钥环境变量 | 说明 |
+|------|----------|--------------|------|
+| **DeepSeek** | `deepseek-v4-flash` | `DEEPSEEK_API_KEY` | 关闭 thinking 模式 |
+| **Kimi** | `kimi-k2.6` | `MOONSHOT_API_KEY` | 关闭 thinking 模式 |
+| **智谱AI** | `glm-4.6` | `ZHIPUAI_API_KEY` | GLM 系列，OpenAI 兼容 |
+| **兼容接口** | 自定义 | 自定义 | 任意支持 Chat Completions + JSON 的服务 |
+| **Mock 版式测试** | — | 无需密钥 | 本地合成中文，仅用于版式回归测试 |
+
+> 外部服务必须由用户显式选择；PaperTrans **不会**在失败时自动切换到其他服务，以免把论文发往未授权端点。桌面端 API Key 保存在 **Windows 凭据管理器**，不写入浏览器存储、任务记录、诊断或缓存。
+
+---
+
+## 🔒 隐私与安全
+
+- **本地解析优先**：PDF 可能包含未公开或敏感内容，解析、OCR、排版全部在本地完成。
+- **最小化外发**：选择外部服务时，只逐段发送经过占位符保护的文本与必要的段落上下文，**绝不上传整份 PDF**。
+- **密钥隔离**：API Key 只存于 Windows 凭据管理器 / 环境变量，不进入源码、日志、任务 JSON、缓存身份或错误摘要。
+- **模型不自动下载**：正式安装包自带本地 OCR 模型；从源码开发或重新打包时，需预先准备 `models/paddleocr/`，代码只读取本地文件，模型不提交到 Git。
+
+---
+
+## 📦 构建 Windows 安装包
 
 ```powershell
+.\.venv\Scripts\python -m pip install -e ".[dev,desktop,ocr]"
 .\scripts\build_windows_release.ps1
 ```
 
-脚本会依次运行 Python、Ruff、前端与 Rust 验收，使用 PyInstaller 构建自包含 sidecar，执行本地 API 冒烟测试，再生成 `frontend/src-tauri/target/release/bundle/nsis/PaperTrans_0.1.1_x64-setup.exe` 和 SHA256。标准安装包会携带本机 `models/paddleocr/` 下经过构建前完整性检查的 PP-OCRv6 medium 检测与识别权重，安装后由 sidecar 直接读取只读资源目录；它不包含 `.papertrans/`、历史任务、API Key、测试 PDF 或开发缓存。安装态数据写入 `%LOCALAPPDATA%\com.papertrans.desktop`。当前安装包未做代码签名，Windows 可能显示 SmartScreen 提示。
-
-全局品牌图标保存在 `assets/branding/papertrans-icon.svg`，同时保留忠实呈现选定稿渐变与抗锯齿的 `papertrans-icon.png`。发布脚本会重新生成两份品牌母版，并由 PNG 主稿统一导出窗口、任务栏、系统托盘、桌面快捷方式和安装程序使用的 ICO/PNG 资源，避免矢量追踪误差或各入口出现不同版本。
-
-检查一份 PDF：
-
-```powershell
-.\.venv\Scripts\papertrans inspect .\paper.pdf
-```
-
-检查产物中的 `ocr-plan.json` 会列出逐页 OCR 决策。默认不执行 OCR；使用已经解压到本地的模型时需显式开启：
-
-```powershell
-.\.venv\Scripts\papertrans inspect .\paper.pdf `
-  --ocr-backend paddleocr `
-  --ocr-model-dir .\models\paddleocr `
-  --ocr-device cpu
-```
-
-同样的 OCR 参数可用于 `translate`。CPU 是当前可复现基线；程序不会自动下载模型，且会自动兼容识别模型目录多嵌套一层的情况。
-
-对页数和尺寸一致、带可靠文字层的参考 PDF 计算 OCR 质量：
-
-```powershell
-.\.venv\Scripts\papertrans inspect .\scan.pdf `
-  --ocr-backend paddleocr `
-  --ocr-model-dir .\models\paddleocr `
-  --ocr-reference .\reference.pdf `
-  --output-dir .\.papertrans\ocr-quality
-```
-
-指定输出目录：
-
-```powershell
-.\.venv\Scripts\papertrans inspect .\paper.pdf --output-dir .\.papertrans\demo
-```
-
-执行零翻译回环：
-
-```powershell
-.\.venv\Scripts\papertrans roundtrip .\paper.pdf --output-dir .\.papertrans\roundtrip-demo
-```
-
-回环产物包括 `output.pdf`、`document.json` 和 `roundtrip-report.json`。当前M2使用白色填充清除原文字形，适合首批白底学术论文；复杂背景将在后续内容流重建阶段处理。
-
-执行本地模拟中文翻译：
-
-```powershell
-.\.venv\Scripts\papertrans translate .\paper.pdf --provider mock --output-dir .\.papertrans\mock-demo
-```
-
-用加长译文进行版式压力测试：
-
-```powershell
-.\.venv\Scripts\papertrans translate .\paper.pdf --provider mock --length-factor 1.3 --output-dir .\.papertrans\mock-demo-1.3
-```
-
-指定共享缓存、最大尝试次数和请求速率：
-
-```powershell
-.\.venv\Scripts\papertrans translate .\paper.pdf --provider mock --cache-dir .\.papertrans\cache\mock --max-attempts 3 --requests-per-second 2
-```
-
-使用可选术语表：
-
-```json
-{
-  "region proposal": "候选区域",
-  "intersection over union": "交并比"
-}
-```
-
-```powershell
-.\.venv\Scripts\papertrans translate .\paper.pdf --provider deepseek --glossary .\glossary.json
-```
-
-术语表必须是 UTF-8 JSON 对象，最多 500 项；路径和完整术语内容不会写入任务报告。
-
-### 外部翻译提供方
-
-外部提供方必须显式选择。密钥只从环境变量读取，没有也不应增加 API-key 命令行参数。DeepSeek 默认模型为 `deepseek-v4-flash`，Kimi 默认模型为 `kimi-k2.6`；两者默认关闭 thinking 模式，也可以用 `--model` 覆盖模型名。
-
-```powershell
-$env:DEEPSEEK_API_KEY = "set-locally"
-.\.venv\Scripts\papertrans translate .\paper.pdf --provider deepseek
-
-$env:MOONSHOT_API_KEY = "set-locally"
-.\.venv\Scripts\papertrans translate .\paper.pdf --provider kimi
-
-$env:MY_PROVIDER_API_KEY = "set-locally"
-.\.venv\Scripts\papertrans translate .\paper.pdf --provider compatible `
-  --base-url https://example.com/v1 `
-  --model example-model `
-  --api-key-env MY_PROVIDER_API_KEY
-```
-
-`compatible` 只保证尽力适配支持 Chat Completions 和 JSON object 响应的服务，必须提供绝对 HTTP(S) `--base-url` 和 `--model`；不同服务的私有字段、鉴权方式或响应差异可能仍需专用适配器。PaperTrans 不会在提供方失败时自动切换到其他服务，以免在未授权的情况下把论文发送到另一端点。
-
-选择外部提供方后，PaperTrans 会逐段发送经过占位符保护的论文文本以及必要的段落上下文；不会上传整份 PDF。这里的“保护”用于确保引用、URL、DOI、变量和单位可恢复，并不等于隐私脱敏。处理未公开或敏感论文前，应先确认所选服务的隐私与数据保留条款。API 密钥不会进入缓存身份、任务 JSON 或错误摘要。
-
-费用只是按提供方公开单价计算的日期快照估算，并非账单。当前快照日期为 **2026-07-31**：DeepSeek 以 USD 估算，缓存输入/未缓存输入/输出分别为 `$0.0028 / $0.14 / $0.28` 每百万令牌；Kimi 以 CNY 估算，分别为 `¥1.10 / ¥6.50 / ¥27.00` 每百万令牌。服务方后续调价不会自动改写历史任务。
-
-可选的真实服务 smoke test 只应使用一份短小、合成且不敏感的 PDF：先在当前本地终端设置新的环境变量密钥，再显式选择提供方，并使用独立输出目录。确认 `provider-run.json`、保护验证和质量门后，立即在服务方控制台撤销临时密钥。不要把真实密钥写入命令历史、脚本、仓库或 bug 报告；自动化测试始终使用 `MockTransport`，不会访问真实网络。
-
-翻译产物包括 `output.pdf`、`document.json`、`ocr-plan.json`、`ocr-run.json`、`protected-segments.json`、`provider-run.json`、`translations.json`、`layout.json` 和 `translation-report.json`。OCR 预检与可选本地识别在 provider 调用前完成；保护映射和提供方运行状态也会在请求前落盘。默认使用本机 Microsoft YaHei；可通过 `PAPERTRANS_CJK_FONT` 和 `PAPERTRANS_CJK_BOLD_FONT` 指定本地字体文件。字体仅在运行时读取，不会复制进仓库。
-
-当前渲染仍使用白色填充清除原文字形，因此只适合白底论文；彩色背景、纹理背景及与文本重叠的复杂矢量对象尚未解决。
-
-输出内容：
+打包前需准备以下两个模型目录，每个目录包含 `inference.json`、`inference.pdiparams` 和 `inference.yml`；脚本不会自动下载模型：
 
 ```text
-.papertrans/demo/
-├── document.json
-├── text-flows.json
-├── ocr-plan.json
-├── inspect-report.md
-├── pages/
-└── overlays/
+models/paddleocr/PP-OCRv6_medium_det_infer/
+models/paddleocr/PP-OCRv6_medium_rec_infer/
 ```
 
-完整的迭代顺序、质量门槛和模型下载策略见 [构建流程](docs/BUILD_FLOW.md)。
+脚本会依次执行 Python / Ruff / 前端测试 → PyInstaller 构建自包含 sidecar → 本地 API 与真实扫描页 OCR 回归测试 → 前端与 Tauri 编译 → 生成 NSIS 安装包与 SHA256。OCR 回归使用合成扫描页、本地模型与 Mock 翻译，不发送论文或调用付费 API；即使使用 `-SkipTests`，此打包回归门也不会跳过。
 
-## 项目原则
+安装包携带上述经过必需文件检查的检测与识别权重，以及 PaddleX 所需的运行配置和 OCR 依赖元数据，安装态由 sidecar 从只读资源目录读取；不包含历史任务、API Key、测试 PDF 或开发缓存。产物位于 `frontend/src-tauri/target/release/bundle/nsis/`。
+
+## ⚠️ 当前边界
+
+- 主要面向白底学术论文，不承诺任意 PDF 的像素级复原。复杂背景、特殊字体、极端扫描件及表格 / 公式识别仍有限制。
+- 质量门检查排版与结构安全，不代表译文语义绝对准确；重要内容仍需人工校对。
+- 外部翻译服务需要用户自行配置，调用费用由对应服务收取。
+- 安装包尚未签名，桌面 CSP 仍未启用；已知风险见 [发布审查](docs/RELEASE_REVIEW_0.1.1.md)。
+
+## 许可证与第三方组件
+
+项目元数据目前声明为 Apache-2.0；该声明不替代第三方组件各自的许可证。PDF 引擎 PyMuPDF / MuPDF 采用 [AGPL 或 Artifex 商业许可](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright)。正式二进制分发前，需确认适用的许可方案并补齐相应许可文本、第三方声明及源码提供安排；目前尚未完成此项确认。
+
+---
+
+## 🗂️ 目录结构
+
+```text
+papertrans/
+├── src/papertrans/            # Python 后端
+│   ├── ingest/                # PDF 解析与 OCR 预检
+│   ├── structure/             # 阅读顺序与文本流恢复
+│   ├── layout/                # 中文排版与全局版式约束
+│   ├── translation/           # 翻译服务、提示词、缓存、模型检测
+│   ├── render/                # 译文 PDF 重建
+│   └── desktop/               # FastAPI 桌面后端（sidecar）
+├── frontend/                  # Tauri 2 + React 19 桌面前端
+│   └── src-tauri/             # Rust 外壳（窗口、托盘、凭据管理器）
+├── scripts/                   # 打包与图标脚本
+├── models/paddleocr/          # 本地 PP-OCRv6 权重（不入 Git）
+└── docs/BUILD_FLOW.md         # 完整迭代顺序与质量门槛
+```
+
+---
+
+## 🧭 项目原则
 
 - 文档结构优先于 OCR。
-- 排版质量和内容完整性必须可测量。
-- 翻译服务、OCR引擎和PDF渲染器保持可替换。
-- 第一阶段先支持文本型学术论文，再增加扫描件。
-- 大模型和OCR模型不自动下载；需要时先提供官方地址和目标路径。
+- 排版质量与内容完整性必须**可测量**。
+- 翻译服务、OCR 引擎、PDF 渲染器保持**可替换**。
+- 先支持文本型学术论文，再扩展扫描件。
+- 大模型与 OCR 模型**不自动下载**；需要时先提供官方地址与目标路径。
+
+> 更完整的迭代顺序、质量门槛与模型下载策略见 [docs/BUILD_FLOW.md](docs/BUILD_FLOW.md)。
+
+---
+
+<div align="center">
+
+**PaperTrans** · 保版式学术 PDF 翻译 · Apache-2.0
+
+</div>
