@@ -39,12 +39,14 @@ from papertrans.translation.reliability import (
     RetryableProviderError,
     RetryPolicy,
 )
+from papertrans.translation.zhipu import ZhipuTranslationProvider
 
 __all__ = [
     "ChatCompletionsTranslationProvider",
     "CloseableTranslationProvider",
     "DeepSeekTranslationProvider",
     "KimiTranslationProvider",
+    "ZhipuTranslationProvider",
     "MockTranslationProvider",
     "NonRetryableProviderError",
     "ProviderError",

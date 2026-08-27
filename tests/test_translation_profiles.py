@@ -2,7 +2,12 @@ import json
 
 from papertrans.translation import TranslationRequest, TranslationUsage, prompt
 from papertrans.translation.profiles import DEEPSEEK_PROFILE, KIMI_PROFILE
-from papertrans.translation.prompt import PROMPT_VERSION, build_chat_messages
+from papertrans.translation.prompt import (
+    PROMPT_VERSION,
+    SELECTION_PROMPT_VERSION,
+    TEXT_PROMPT_VERSION,
+    build_chat_messages,
+)
 
 
 def test_named_profiles_use_current_official_defaults() -> None:
@@ -74,3 +79,39 @@ def test_prompt_is_versioned_and_carries_only_limited_segment_context() -> None:
     assert "JSON" in messages[0]["content"]
     assert "current segment" in messages[0]["content"]
     assert "neighboring context" in messages[0]["content"]
+
+
+def test_standalone_text_translation_uses_an_isolated_prompt_version() -> None:
+    request = TranslationRequest(
+        segment_id="desktop-text",
+        text="Translate this text.",
+        context={
+            "schema_version": "m7_text_v1",
+            "translation_mode": "standalone_text",
+            "prompt_version": TEXT_PROMPT_VERSION,
+        },
+    )
+
+    messages = build_chat_messages(request)
+
+    assert TEXT_PROMPT_VERSION == "standalone_text_zh_v1"
+    assert "supplied text" in messages[0]["content"]
+    assert "neighboring context" not in messages[0]["content"]
+
+
+def test_selected_text_translation_uses_an_isolated_prompt_version() -> None:
+    request = TranslationRequest(
+        segment_id="desktop-selection",
+        text="proposal",
+        context={
+            "schema_version": "m7_selection_v1",
+            "translation_mode": "selected_text",
+            "prompt_version": SELECTION_PROMPT_VERSION,
+        },
+    )
+
+    messages = build_chat_messages(request)
+
+    assert SELECTION_PROMPT_VERSION == "selected_text_zh_v1"
+    assert "supplied text" in messages[0]["content"]
+    assert "neighboring context" not in messages[0]["content"]

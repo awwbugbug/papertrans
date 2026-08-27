@@ -1,4 +1,4 @@
-import type { JobState, SourceDocument, SystemInfo } from "./types";
+import type { JobState, LibraryTaskDetail, LibraryTaskSummary, PageReadingMap, SelectionTranslationResult, SourceDocument, StorageCleanupResult, StorageInfo, SystemInfo, TextTranslationResult } from "./types";
 
 const query = new URLSearchParams(window.location.search);
 const queryToken = query.get("session");
@@ -44,6 +44,15 @@ export async function registerSource(path: string): Promise<SourceDocument> {
   });
 }
 
+export async function listProviderModels(payload: Record<string, unknown>): Promise<string[]> {
+  const result = await api<{ models: string[] }>("/api/provider-models", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return result.models;
+}
+
 export async function startJob(payload: Record<string, unknown>): Promise<JobState> {
   return api<JobState>("/api/jobs", {
     method: "POST",
@@ -52,13 +61,100 @@ export async function startJob(payload: Record<string, unknown>): Promise<JobSta
   });
 }
 
+export async function translateText(
+  payload: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<TextTranslationResult> {
+  return api<TextTranslationResult>("/api/text-translations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+}
+
+export async function translateSelection(
+  payload: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<SelectionTranslationResult> {
+  return api<SelectionTranslationResult>("/api/selection-translations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+}
+
 export async function loadJob(jobId: string): Promise<JobState> {
   return api<JobState>(`/api/jobs/${jobId}`);
+}
+
+export async function loadReadingMap(
+  jobId: string,
+  pageNumber: number,
+  signal?: AbortSignal,
+): Promise<PageReadingMap> {
+  return api<PageReadingMap>(`/api/jobs/${jobId}/reading-map/${pageNumber}`, { signal });
+}
+
+export async function loadLibraryTasks(): Promise<LibraryTaskSummary[]> {
+  const result = await api<{ tasks: LibraryTaskSummary[] }>("/api/library/tasks");
+  return result.tasks;
+}
+
+export async function loadLibraryTask(taskId: string): Promise<LibraryTaskDetail> {
+  return api<LibraryTaskDetail>(`/api/library/tasks/${taskId}`);
+}
+
+export async function deleteLibraryTask(taskId: string): Promise<boolean> {
+  const result = await api<{ deleted: boolean }>(`/api/library/tasks/${taskId}`, {
+    method: "DELETE",
+  });
+  return result.deleted;
+}
+
+export async function loadLibraryReadingMap(
+  taskId: string,
+  pageNumber: number,
+  signal?: AbortSignal,
+): Promise<PageReadingMap> {
+  return api<PageReadingMap>(`/api/library/tasks/${taskId}/reading-map/${pageNumber}`, { signal });
+}
+
+export async function openLibraryTask(taskId: string): Promise<boolean> {
+  const result = await api<{ opened: boolean }>(`/api/library/tasks/${taskId}/open`, {
+    method: "POST",
+  });
+  return result.opened;
+}
+
+export async function loadStorageInfo(): Promise<StorageInfo> {
+  return api<StorageInfo>("/api/storage");
+}
+
+export async function clearTranslationCache(): Promise<StorageCleanupResult> {
+  return api<StorageCleanupResult>("/api/storage/cache/clear", { method: "POST" });
+}
+
+export async function clearTemporaryUploads(): Promise<StorageCleanupResult> {
+  return api<StorageCleanupResult>("/api/storage/uploads/clear", { method: "POST" });
+}
+
+export async function releaseSource(sourceId: string): Promise<boolean> {
+  const result = await api<{ released: boolean }>(`/api/sources/${sourceId}`, {
+    method: "DELETE",
+  });
+  return result.released;
 }
 
 export function artifactUrl(jobId: string, kind: "source" | "output"): string {
   const token = sessionToken ? `?session=${encodeURIComponent(sessionToken)}` : "";
   return requestUrl(`/api/jobs/${jobId}/${kind}${token}`);
+}
+
+export function libraryArtifactUrl(taskId: string, kind: "source" | "output"): string {
+  const token = sessionToken ? `?session=${encodeURIComponent(sessionToken)}` : "";
+  return requestUrl(`/api/library/tasks/${taskId}/${kind}${token}`);
 }
 
 export function sourceUrl(sourceId: string): string {

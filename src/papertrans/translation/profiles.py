@@ -81,6 +81,15 @@ KIMI_PROFILE = ProviderProfile(
 )
 
 
+ZHIPU_PROFILE = ProviderProfile(
+    provider="zhipu",
+    base_url="https://open.bigmodel.cn/api/paas/v4",
+    default_model="glm-4.6",
+    api_key_env="ZHIPUAI_API_KEY",
+    thinking_mode="provider_default",
+)
+
+
 def compatible_profile(base_url: str, api_key_env: str) -> ProviderProfile:
     return ProviderProfile(
         provider="compatible",

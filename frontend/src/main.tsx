@@ -10,6 +10,9 @@ import "@fontsource/jetbrains-mono/400.css";
 import "material-symbols/outlined.css";
 import "./styles.css";
 
+const storedTheme = window.localStorage.getItem("papertrans-theme");
+document.documentElement.dataset.theme = storedTheme === "dark" ? "dark" : "light";
+
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

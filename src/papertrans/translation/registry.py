@@ -16,10 +16,12 @@ from papertrans.translation.mock import MockTranslationProvider
 from papertrans.translation.profiles import (
     DEEPSEEK_PROFILE,
     KIMI_PROFILE,
+    ZHIPU_PROFILE,
     compatible_profile,
 )
+from papertrans.translation.zhipu import ZhipuTranslationProvider
 
-PROVIDER_NAMES = ("mock", "deepseek", "kimi", "compatible")
+PROVIDER_NAMES = ("mock", "deepseek", "kimi", "zhipu", "compatible")
 _COMPATIBLE_API_KEY_ENV = "PAPERTRANS_COMPATIBLE_API_KEY"
 _BRACKETED_AUTHORITY = re.compile(r"^\[[^\[\]]+\](?::\d+)?$")
 _UNBRACKETED_AUTHORITY = re.compile(r"^[^:\[\]]+(?::\d+)?$")
@@ -64,9 +66,17 @@ def create_translation_provider(
             max_output_tokens=max_output_tokens,
             http_client=http_client,
         )
-    return KimiTranslationProvider(
-        _required_api_key(environment, "MOONSHOT_API_KEY"),
-        model=model or KIMI_PROFILE.default_model,
+    if provider_name == "kimi":
+        return KimiTranslationProvider(
+            _required_api_key(environment, "MOONSHOT_API_KEY"),
+            model=model or KIMI_PROFILE.default_model,
+            timeout_seconds=timeout_seconds,
+            max_output_tokens=max_output_tokens,
+            http_client=http_client,
+        )
+    return ZhipuTranslationProvider(
+        _required_api_key(environment, "ZHIPUAI_API_KEY"),
+        model=model or ZHIPU_PROFILE.default_model,
         timeout_seconds=timeout_seconds,
         max_output_tokens=max_output_tokens,
         http_client=http_client,

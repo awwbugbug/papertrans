@@ -15,7 +15,17 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from papertrans.desktop.jobs import DesktopJobManager, DesktopJobRequest, inspect_source
-from papertrans.translation.profiles import DEEPSEEK_PROFILE, KIMI_PROFILE
+from papertrans.desktop.reading_map import build_reading_map
+from papertrans.desktop.storage import DesktopStorageManager
+from papertrans.desktop.text_translation import (
+    MAX_SELECTED_TRANSLATION_CHARS,
+    MAX_TEXT_TRANSLATION_CHARS,
+    TEXT_TRANSLATION_MODE_SELECTION,
+    DesktopTextTranslationRequest,
+    DesktopTextTranslator,
+)
+from papertrans.translation.models import list_provider_models
+from papertrans.translation.profiles import DEEPSEEK_PROFILE, KIMI_PROFILE, ZHIPU_PROFILE
 
 MAX_UPLOAD_BYTES = 250 * 1024 * 1024
 
@@ -31,10 +41,43 @@ class StartJobPayload(BaseModel):
     base_url: str | None = Field(default=None, alias="baseUrl")
     ocr_enabled: bool = Field(default=False, alias="ocrEnabled")
     ocr_model_dir: str | None = Field(default=None, alias="ocrModelDir")
+    target_language: str = Field(default="zh-CN", alias="targetLanguage")
+
+
+class ProviderModelsPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    provider: str
+    api_key: str | None = Field(default=None, alias="apiKey")
+    base_url: str | None = Field(default=None, alias="baseUrl")
 
 
 class RegisterSourcePayload(BaseModel):
     path: str
+
+
+class TranslateTextPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str = Field(max_length=MAX_TEXT_TRANSLATION_CHARS)
+    provider: str
+    api_key: str | None = Field(default=None, alias="apiKey")
+    model: str | None = None
+    base_url: str | None = Field(default=None, alias="baseUrl")
+    source_language: str = Field(default="auto", alias="sourceLanguage")
+    target_language: str = Field(default="zh-CN", alias="targetLanguage")
+
+
+class TranslateSelectionPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str = Field(max_length=MAX_SELECTED_TRANSLATION_CHARS)
+    provider: str
+    api_key: str | None = Field(default=None, alias="apiKey")
+    model: str | None = None
+    base_url: str | None = Field(default=None, alias="baseUrl")
+    source_language: str = Field(default="auto", alias="sourceLanguage")
+    target_language: str = Field(default="zh-CN", alias="targetLanguage")
 
 
 def create_desktop_api(
@@ -44,6 +87,7 @@ def create_desktop_api(
     uploads_dir: str | Path | None = None,
     frontend_dir: str | Path | None = None,
     ocr_model_dir: str | Path | None = None,
+    text_translator: DesktopTextTranslator | None = None,
 ) -> FastAPI:
     token = session_token or secrets.token_urlsafe(32)
     upload_root = Path(uploads_dir or manager.jobs_root / "uploads").resolve()
@@ -59,13 +103,33 @@ def create_desktop_api(
             "https://tauri.localhost",
             "tauri://localhost",
         ],
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["X-PaperTrans-Token", "Content-Type"],
     )
     app.state.session_token = token
     app.state.manager = manager
+    app.state.text_translator = text_translator or DesktopTextTranslator(
+        manager.jobs_root.parent / "cache" / "text"
+    )
+    app.state.storage = DesktopStorageManager(manager.jobs_root.parent, upload_root)
+    storage_lock = threading.Lock()
     sources: dict[str, Path] = {}
     sources_lock = threading.Lock()
+
+    def retained_source_paths() -> set[Path]:
+        retained = manager.library.source_paths() | manager.active_source_paths()
+        with sources_lock:
+            retained.update(sources.values())
+        return retained
+
+    def best_effort_orphan_cleanup() -> None:
+        try:
+            app.state.storage.clear_orphan_uploads(retained_source_paths())
+        except OSError:
+            # A locked temporary file must not prevent startup or undo a completed user action.
+            pass
+
+    best_effort_orphan_cleanup()
 
     def register_source(path: str | Path) -> dict[str, object]:
         resolved = Path(path).expanduser().resolve()
@@ -99,6 +163,12 @@ def create_desktop_api(
                     "name": "kimi",
                     "label": "Kimi",
                     "defaultModel": KIMI_PROFILE.default_model,
+                    "requiresApiKey": True,
+                },
+                {
+                    "name": "zhipu",
+                    "label": "智谱AI",
+                    "defaultModel": ZHIPU_PROFILE.default_model,
                     "requiresApiKey": True,
                 },
                 {
@@ -166,6 +236,13 @@ def create_desktop_api(
             content_disposition_type="inline",
         )
 
+    @app.delete("/api/sources/{source_id}")
+    def release_source(source_id: str) -> dict[str, bool]:
+        with sources_lock:
+            released = sources.pop(source_id, None) is not None
+        best_effort_orphan_cleanup()
+        return {"released": released}
+
     @app.post("/api/jobs")
     def start_job(payload: StartJobPayload) -> dict[str, object]:
         try:
@@ -180,11 +257,160 @@ def create_desktop_api(
                     ocr_model_dir=(
                         Path(payload.ocr_model_dir) if payload.ocr_model_dir else None
                     ),
+                    target_language=payload.target_language,
                 ),
                 api_key=payload.api_key,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/provider-models")
+    def provider_models(payload: ProviderModelsPayload) -> dict[str, object]:
+        try:
+            models = list_provider_models(
+                payload.provider,
+                payload.api_key or "",
+                payload.base_url,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"models": models}
+
+    @app.post("/api/text-translations")
+    def translate_text(payload: TranslateTextPayload) -> dict[str, object]:
+        try:
+            with storage_lock:
+                result = app.state.text_translator.translate(
+                    DesktopTextTranslationRequest(
+                        text=payload.text,
+                        provider=payload.provider,
+                        model=payload.model,
+                        base_url=payload.base_url,
+                        source_language=payload.source_language,
+                        target_language=payload.target_language,
+                    ),
+                    api_key=payload.api_key,
+                )
+            result["task"] = manager.library.add_text_task(
+                source_text=payload.text,
+                translation=str(result["translation"]),
+                provider=payload.provider,
+            )
+            return result
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=_safe_text_translation_error(exc, payload.api_key),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=_safe_text_translation_error(exc, payload.api_key),
+            ) from exc
+
+    @app.post("/api/selection-translations")
+    def translate_selection(payload: TranslateSelectionPayload) -> dict[str, object]:
+        try:
+            with storage_lock:
+                result = app.state.text_translator.translate(
+                    DesktopTextTranslationRequest(
+                        text=payload.text,
+                        provider=payload.provider,
+                        model=payload.model,
+                        base_url=payload.base_url,
+                        source_language=payload.source_language,
+                        target_language=payload.target_language,
+                        translation_mode=TEXT_TRANSLATION_MODE_SELECTION,
+                    ),
+                    api_key=payload.api_key,
+                )
+            return {"schema": "m7_selection_translation_v1", **result}
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=_safe_text_translation_error(exc, payload.api_key),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=_safe_text_translation_error(exc, payload.api_key),
+            ) from exc
+
+    @app.get("/api/library/tasks")
+    def list_library_tasks() -> dict[str, object]:
+        return {"tasks": manager.library.list_tasks()}
+
+    @app.get("/api/library/tasks/{task_id}")
+    def get_library_task(task_id: str) -> dict[str, object]:
+        try:
+            return manager.library.get_task(task_id)
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="本地任务不存在或内容不可用") from exc
+
+    @app.delete("/api/library/tasks/{task_id}")
+    def delete_library_task(task_id: str) -> dict[str, object]:
+        try:
+            deleted = manager.delete_library_task(task_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="本地任务不存在") from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        best_effort_orphan_cleanup()
+        return {"deleted": True, **deleted}
+
+    @app.get("/api/storage")
+    def storage_info() -> dict[str, object]:
+        return app.state.storage.snapshot()
+
+    @app.post("/api/storage/cache/clear")
+    def clear_translation_cache() -> dict[str, object]:
+        try:
+            with storage_lock:
+                return manager.run_storage_maintenance(app.state.storage.clear_cache)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/storage/uploads/clear")
+    def clear_temporary_uploads() -> dict[str, object]:
+        return app.state.storage.clear_orphan_uploads(retained_source_paths())
+
+    @app.get("/api/library/tasks/{task_id}/{kind}")
+    def library_pdf_artifact(task_id: str, kind: str) -> FileResponse:
+        if kind not in {"source", "output"}:
+            raise HTTPException(status_code=404, detail="PDF 文件不存在")
+        try:
+            path = manager.library.pdf_artifact(task_id, kind)
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="PDF 文件不存在") from exc
+        return FileResponse(
+            path,
+            media_type="application/pdf",
+            filename=path.name,
+            content_disposition_type="inline",
+        )
+
+    @app.get("/api/library/tasks/{task_id}/reading-map/{page_number}")
+    def library_reading_map(task_id: str, page_number: int) -> dict[str, object]:
+        try:
+            return build_reading_map(manager.library.pdf_output_dir(task_id), page_number)
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="段落映射尚不可用") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/library/tasks/{task_id}/open")
+    def open_library_task(task_id: str) -> dict[str, bool]:
+        try:
+            path = manager.library.open_path(task_id)
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="本地任务不存在或内容不可用") from exc
+        path.mkdir(parents=True, exist_ok=True)
+        if os.name != "nt":
+            raise HTTPException(status_code=501, detail="当前平台暂不支持打开文件夹")
+        os.startfile(path)  # type: ignore[attr-defined]
+        return {"opened": True}
 
     @app.get("/api/jobs/{job_id}")
     def get_job(job_id: str) -> dict[str, object]:
@@ -219,6 +445,17 @@ def create_desktop_api(
             content_disposition_type="inline",
         )
 
+    @app.get("/api/jobs/{job_id}/reading-map/{page_number}")
+    def reading_map(job_id: str, page_number: int) -> dict[str, object]:
+        try:
+            return manager.reading_map(job_id, page_number)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="任务不存在") from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="段落映射尚不可用") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.post("/api/jobs/{job_id}/open")
     def open_job_output(job_id: str) -> dict[str, bool]:
         try:
@@ -242,3 +479,12 @@ def _unauthorized_response():
     from fastapi.responses import JSONResponse
 
     return JSONResponse(status_code=401, content={"detail": "Desktop session required"})
+
+
+def _safe_text_translation_error(exc: Exception, secret: str | None) -> str:
+    message = str(exc)
+    if secret:
+        message = message.replace(secret, "[REDACTED]")
+    if not message or "sk-" in message.lower() or "bearer " in message.lower():
+        return "文本翻译失败，请检查服务配置"
+    return message[:300]

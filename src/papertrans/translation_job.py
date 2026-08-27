@@ -14,7 +14,12 @@ from papertrans.ingest import (
     annotate_document_with_ocr_plan,
     prepare_document,
 )
-from papertrans.layout import build_cjk_layout, validate_layout
+from papertrans.layout import (
+    CJKFontResolver,
+    build_cjk_layout,
+    is_word_segmented,
+    validate_layout,
+)
 from papertrans.qa import evaluate_roundtrip
 from papertrans.render import render_translated_layout
 from papertrans.translation import (
@@ -263,6 +268,7 @@ def run_translation_job(
     requests_per_second: float = 0.0,
     glossary: Mapping[str, str] | None = None,
     ocr_config: OCRRuntimeConfig | None = None,
+    target_language: str = "zh-CN",
 ) -> TranslationJobResult:
     source_path = Path(source).expanduser().resolve()
     resolved_output = Path(output_dir).expanduser().resolve()
@@ -327,6 +333,7 @@ def run_translation_job(
         translation_batch = translate_text_flows_with_protection(
             document,
             reliable_provider,
+            target_language=target_language,
             protected_segments=protected_segments,
             glossary=glossary,
         )
@@ -364,7 +371,13 @@ def run_translation_job(
         stats=translation_batch.stats,
     )
     translations = translation_batch.translations
-    layout = build_cjk_layout(document, translations)
+    font_resolver = CJKFontResolver(language=target_language)
+    layout = build_cjk_layout(
+        document,
+        translations,
+        font_resolver=font_resolver,
+        word_segmented=is_word_segmented(target_language),
+    )
     translations_json = resolved_output / "translations.json"
     translations_json.write_text(
         json.dumps(
@@ -419,7 +432,9 @@ def run_translation_job(
     output_replaced = False
     if layout_safety.passed:
         try:
-            render_stats = render_translated_layout(source_path, document, layout, temporary_pdf)
+            render_stats = render_translated_layout(
+                source_path, document, layout, temporary_pdf, font_resolver=font_resolver
+            )
             pdf_quality = evaluate_roundtrip(source_path, temporary_pdf)
             gates.update(
                 {

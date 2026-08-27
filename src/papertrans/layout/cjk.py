@@ -42,10 +42,24 @@ def _flow_bold(flow: TextFlow, regions: list[Region]) -> bool:
     return bool(flags) and sum(bool(flag & 16) for flag in flags) >= len(flags) / 2
 
 
-def _take_line(text: str, width: float, font: ResolvedCJKFont, font_size: float) -> tuple[str, str]:
+def _take_line(
+    text: str,
+    width: float,
+    font: ResolvedCJKFont,
+    font_size: float,
+    word_segmented: bool = False,
+) -> tuple[str, str]:
     text = text.lstrip()
     if not text:
         return "", ""
+    if word_segmented:
+        return _take_word_line(text, width, font, font_size)
+    return _take_char_line(text, width, font, font_size)
+
+
+def _take_char_line(
+    text: str, width: float, font: ResolvedCJKFont, font_size: float
+) -> tuple[str, str]:
     current = ""
     index = 0
     for index, character in enumerate(text):
@@ -64,6 +78,46 @@ def _take_line(text: str, width: float, font: ResolvedCJKFont, font_size: float)
     return current.rstrip(), text[index + 1 :]
 
 
+def _take_word_line(
+    text: str, width: float, font: ResolvedCJKFont, font_size: float
+) -> tuple[str, str]:
+    line = ""
+    index = 0
+    length = len(text)
+    while index < length:
+        if text[index] == "\n":
+            return line.rstrip(), text[index + 1 :]
+        chunk_start = index
+        while index < length and text[index] == " ":
+            index += 1
+        while index < length and text[index] not in (" ", "\n"):
+            index += 1
+        chunk = text[chunk_start:index]
+        candidate = f"{line}{chunk}"
+        if line and font.metrics.text_length(candidate, fontsize=font_size) > width:
+            return line.rstrip(), text[chunk_start:]
+        if not line:
+            word = chunk.strip()
+            if word and font.metrics.text_length(word, fontsize=font_size) > width:
+                fit, leftover = _char_break_word(word, width, font, font_size)
+                remainder = f"{leftover}{text[index:]}" if leftover else text[index:]
+                return fit.rstrip(), remainder
+        line = candidate
+    return line.rstrip(), ""
+
+
+def _char_break_word(
+    word: str, width: float, font: ResolvedCJKFont, font_size: float
+) -> tuple[str, str]:
+    current = ""
+    for position, character in enumerate(word):
+        candidate = f"{current}{character}"
+        if current and font.metrics.text_length(candidate, fontsize=font_size) > width:
+            return current, word[position:]
+        current = candidate
+    return current, ""
+
+
 def _initial_occupancy(document: Document) -> dict[int, list[Box]]:
     return protected_boxes_by_page(document)
 
@@ -76,6 +130,7 @@ def _layout_attempt(
     font_size: float,
     font: ResolvedCJKFont,
     occupied_by_page: dict[int, list[Box]],
+    word_segmented: bool = False,
 ) -> tuple[list[LinePlacement], str, int]:
     remaining = text
     placements: list[LinePlacement] = []
@@ -102,7 +157,9 @@ def _layout_attempt(
             ):
                 blocked_line_slots += 1
                 continue
-            line, remaining = _take_line(remaining, region.bbox.width, font, font_size)
+            line, remaining = _take_line(
+                remaining, region.bbox.width, font, font_size, word_segmented
+            )
             if not line:
                 break
             line_width = font.metrics.text_length(line, fontsize=font_size)
@@ -179,6 +236,7 @@ def build_cjk_layout(
     document: Document,
     translations: dict[str, TranslationResult],
     font_resolver: CJKFontResolver | None = None,
+    word_segmented: bool = False,
 ) -> DocumentLayout:
     resolver = font_resolver or CJKFontResolver()
     region_by_id = {region.id: region for page in document.pages for region in page.regions}
@@ -214,6 +272,7 @@ def build_cjk_layout(
                 size,
                 font,
                 occupied_by_page,
+                word_segmented,
             )
             selected = FlowLayout(
                 flow_id=flow.id,

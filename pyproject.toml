@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "papertrans"
-version = "0.1.0"
+version = "0.1.1"
 description = "Layout-aware academic PDF translation toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,8 +17,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "Pillow>=12,<14",
+  "pyinstaller>=6.16,<7",
   "pytest>=8,<9",
   "ruff>=0.6,<1",
+  "vtracer>=0.6.15,<1",
 ]
 ocr = [
   "paddleocr==3.7.0",

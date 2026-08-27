@@ -11,6 +11,8 @@ from uuid import uuid4
 
 import pymupdf
 
+from papertrans.desktop.library import LocalTaskLibrary
+from papertrans.desktop.reading_map import build_reading_map
 from papertrans.ingest import OCRPreflightError, OCRRuntimeConfig
 from papertrans.translation import (
     CloseableTranslationProvider,
@@ -22,15 +24,17 @@ from papertrans.translation_job import TranslationJobResult, run_translation_job
 ProviderFactory = Callable[..., TranslationProvider]
 JobRunner = Callable[..., TranslationJobResult]
 
-_PROVIDER_LABELS = {
+DESKTOP_PROVIDER_LABELS = {
     "mock": "Mock 版式测试",
     "deepseek": "DeepSeek",
     "kimi": "Kimi",
+    "zhipu": "智谱AI",
     "compatible": "兼容接口",
 }
-_PROVIDER_KEY_NAMES = {
+DESKTOP_PROVIDER_KEY_NAMES = {
     "deepseek": "DEEPSEEK_API_KEY",
     "kimi": "MOONSHOT_API_KEY",
+    "zhipu": "ZHIPUAI_API_KEY",
     "compatible": "PAPERTRANS_COMPATIBLE_API_KEY",
 }
 
@@ -44,6 +48,7 @@ class DesktopJobRequest:
     base_url: str | None = None
     ocr_enabled: bool = False
     ocr_model_dir: Path | None = None
+    target_language: str = "zh-CN"
 
 
 @dataclass(slots=True)
@@ -68,11 +73,13 @@ class DesktopJobManager:
         *,
         provider_factory: ProviderFactory = create_translation_provider,
         runner: JobRunner = run_translation_job,
+        library: LocalTaskLibrary | None = None,
     ) -> None:
         self.jobs_root = Path(jobs_root).expanduser().resolve()
         self.jobs_root.mkdir(parents=True, exist_ok=True)
         self._provider_factory = provider_factory
         self._runner = runner
+        self.library = library or LocalTaskLibrary(self.jobs_root.parent / "library")
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="papertrans-job")
         self._jobs: dict[str, _JobRecord] = {}
         self._lock = threading.Lock()
@@ -88,6 +95,13 @@ class DesktopJobManager:
         )
         with self._lock:
             self._jobs[job_id] = record
+            self.library.create_pdf_task(
+                task_id=job_id,
+                source_path=resolved.source_path,
+                output_dir=resolved.output_dir,
+                provider=resolved.provider,
+                created_at=record.created_at,
+            )
             record.future = self._executor.submit(self._execute, job_id, api_key)
         return self.snapshot(job_id)
 
@@ -123,6 +137,15 @@ class DesktopJobManager:
             record = self._require(job_id)
             return record.output_dir or record.request.output_dir
 
+    def reading_map(self, job_id: str, page_number: int) -> dict[str, Any]:
+        with self._lock:
+            record = self._require(job_id)
+            if record.output_pdf is None or not record.output_pdf.is_file():
+                raise FileNotFoundError("Translated PDF is not available")
+            output_dir = record.output_dir
+        assert output_dir is not None
+        return build_reading_map(output_dir, page_number)
+
     def wait(self, job_id: str, timeout: float = 30.0) -> dict[str, Any]:
         with self._lock:
             future = self._require(job_id).future
@@ -133,6 +156,32 @@ class DesktopJobManager:
     def shutdown(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=False)
 
+    def delete_library_task(self, task_id: str) -> dict[str, Any]:
+        with self._lock:
+            record = self._jobs.get(task_id)
+            if record is not None and record.future is not None and not record.future.done():
+                raise RuntimeError("任务正在运行，完成后才能删除")
+            deleted = self.library.delete_task(task_id)
+            self._jobs.pop(task_id, None)
+            return deleted
+
+    def active_source_paths(self) -> set[Path]:
+        with self._lock:
+            return {
+                record.request.source_path
+                for record in self._jobs.values()
+                if record.future is not None and not record.future.done()
+            }
+
+    def run_storage_maintenance(self, action: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        with self._lock:
+            if any(
+                record.future is not None and not record.future.done()
+                for record in self._jobs.values()
+            ):
+                raise RuntimeError("翻译任务运行期间不能清理缓存")
+            return action()
+
     def _execute(self, job_id: str, api_key: str | None) -> None:
         with self._lock:
             record = self._require(job_id)
@@ -140,6 +189,11 @@ class DesktopJobManager:
             record.stage = "pipeline"
             record.message = "正在执行解析、翻译、排版和质量检查"
             request = record.request
+            intended_output = request.output_dir / (
+                f"{request.source_path.stem}-{request.provider}-translation"
+            )
+            record.output_dir = intended_output
+            self._persist_pdf_record(record)
 
         provider: TranslationProvider | None = None
         try:
@@ -150,9 +204,7 @@ class DesktopJobManager:
                 base_url=request.base_url,
                 environ=environment,
             )
-            output_dir = request.output_dir / (
-                f"{request.source_path.stem}-{request.provider}-translation"
-            )
+            output_dir = intended_output
             ocr_config = None
             if request.ocr_enabled:
                 assert request.ocr_model_dir is not None
@@ -164,6 +216,7 @@ class DesktopJobManager:
                 output_dir,
                 provider,
                 ocr_config=ocr_config,
+                target_language=request.target_language,
             )
             with self._lock:
                 record = self._require(job_id)
@@ -177,24 +230,28 @@ class DesktopJobManager:
                     if record.status == "completed"
                     else "翻译结果需要人工检查"
                 )
+                self._persist_pdf_record(record)
         except OCRPreflightError:
             with self._lock:
                 record = self._require(job_id)
                 record.status = "review"
                 record.stage = "ocr_review"
                 record.message = "部分页面需要开启 OCR 或人工检查"
+                self._persist_pdf_record(record)
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             with self._lock:
                 record = self._require(job_id)
                 record.status = "failed"
                 record.stage = "failed"
                 record.message = _safe_error_message(exc, secret=api_key)
+                self._persist_pdf_record(record)
         except Exception:
             with self._lock:
                 record = self._require(job_id)
                 record.status = "failed"
                 record.stage = "failed"
                 record.message = "本地任务执行失败，请查看诊断信息"
+                self._persist_pdf_record(record)
         finally:
             if isinstance(provider, CloseableTranslationProvider):
                 try:
@@ -209,7 +266,7 @@ class DesktopJobManager:
         if not source.is_file() or source.suffix.lower() != ".pdf":
             raise ValueError("请选择有效的 PDF 文件")
         output = request.output_dir.expanduser().resolve()
-        if request.provider not in _PROVIDER_LABELS:
+        if request.provider not in DESKTOP_PROVIDER_LABELS:
             raise ValueError("不支持所选翻译服务")
         if request.provider != "mock" and not api_key:
             raise ValueError("所选翻译服务需要 API Key")
@@ -230,6 +287,7 @@ class DesktopJobManager:
             base_url=request.base_url,
             ocr_enabled=request.ocr_enabled,
             ocr_model_dir=ocr_model,
+            target_language=request.target_language,
         )
 
     @staticmethod
@@ -237,13 +295,22 @@ class DesktopJobManager:
         if provider == "mock":
             return {}
         assert api_key is not None
-        return {_PROVIDER_KEY_NAMES[provider]: api_key}
+        return {DESKTOP_PROVIDER_KEY_NAMES[provider]: api_key}
 
     def _require(self, job_id: str) -> _JobRecord:
         try:
             return self._jobs[job_id]
         except KeyError as exc:
             raise KeyError("Unknown desktop job") from exc
+
+    def _persist_pdf_record(self, record: _JobRecord) -> None:
+        self.library.update_pdf_task(
+            record.id,
+            status=record.status,
+            message=record.message,
+            output_dir=record.output_dir,
+            output_pdf=record.output_pdf,
+        )
 
 
 def inspect_source(path: str | Path) -> dict[str, Any]:

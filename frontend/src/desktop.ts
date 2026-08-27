@@ -1,10 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, type Theme } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { ProviderName } from "./types";
 
 export type DesktopSession = {
   apiBase: string;
   sessionToken: string;
+};
+
+export type StoredProviderConfig = {
+  provider: Exclude<ProviderName, "mock">;
+  apiKey: string;
+  model: string;
+  baseUrl: string;
 };
 
 export function isTauriDesktop(): boolean {
@@ -14,6 +22,16 @@ export function isTauriDesktop(): boolean {
 export async function loadDesktopSession(): Promise<DesktopSession | null> {
   if (!isTauriDesktop()) return null;
   return invoke<DesktopSession>("desktop_session");
+}
+
+export async function loadDesktopProviderConfigs(): Promise<StoredProviderConfig[]> {
+  if (!isTauriDesktop()) return [];
+  return invoke<StoredProviderConfig[]>("load_provider_configs");
+}
+
+export async function saveDesktopProviderConfig(config: StoredProviderConfig): Promise<void> {
+  if (!isTauriDesktop()) return;
+  await invoke("save_provider_config", { config });
 }
 
 export async function pickDesktopPdf(): Promise<string | null> {
@@ -45,6 +63,16 @@ export async function toggleDesktopMaximize(): Promise<boolean> {
 
 export async function closeDesktopWindow(): Promise<void> {
   if (isTauriDesktop()) await getCurrentWindow().close();
+}
+
+export async function setDesktopExitOnClose(enabled: boolean): Promise<void> {
+  if (!isTauriDesktop()) return;
+  await invoke("set_exit_on_close", { enabled });
+}
+
+export async function setDesktopTheme(theme: Theme): Promise<void> {
+  if (!isTauriDesktop()) return;
+  await getCurrentWindow().setTheme(theme);
 }
 
 export async function watchDesktopMaximized(

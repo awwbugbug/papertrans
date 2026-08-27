@@ -5,6 +5,7 @@ from papertrans.translation import MockTranslationProvider
 from papertrans.translation.deepseek import DeepSeekTranslationProvider
 from papertrans.translation.kimi import KimiTranslationProvider
 from papertrans.translation.registry import create_translation_provider
+from papertrans.translation.zhipu import ZhipuTranslationProvider
 
 
 def test_registry_creates_mock_without_credentials() -> None:
@@ -38,6 +39,22 @@ def test_registry_creates_named_providers_from_expected_environment() -> None:
     assert kimi.cache_identity["model"] == "kimi-k2.6"
     assert "sentinel" not in str(deepseek.cache_identity)
     assert "sentinel" not in str(kimi.cache_identity)
+
+
+def test_registry_creates_zhipu_from_expected_environment() -> None:
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500))
+    )
+    zhipu = create_translation_provider(
+        "zhipu",
+        environ={"ZHIPUAI_API_KEY": "zhipu-sentinel"},
+        http_client=client,
+    )
+
+    assert isinstance(zhipu, ZhipuTranslationProvider)
+    assert zhipu.cache_identity["model"] == "glm-4.6"
+    assert zhipu.cache_identity["base_url"] == "https://open.bigmodel.cn/api/paas/v4"
+    assert "sentinel" not in str(zhipu.cache_identity)
 
 
 def test_compatible_requires_endpoint_model_and_environment_key() -> None:

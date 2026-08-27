@@ -49,6 +49,22 @@ def _windows_vsdevcmd() -> Path:
     )
 
 
+def _windows_msvc_linker(vsdevcmd: Path) -> Path:
+    visual_studio_root = vsdevcmd.parents[2]
+    tools_root = visual_studio_root / "VC" / "Tools" / "MSVC"
+    candidates = sorted(
+        tools_root.glob("*/bin/Hostx64/x64/link.exe"),
+        key=lambda candidate: candidate.parent.parent.parent.parent.name,
+        reverse=True,
+    )
+    if candidates:
+        return candidates[0]
+    raise RuntimeError(
+        "The Visual Studio x64 MSVC linker was not found. Repair the Desktop development with "
+        "C++ workload before starting PaperTrans."
+    )
+
+
 def main() -> None:
     repository = Path(__file__).resolve().parents[3]
     frontend = repository / "frontend"
@@ -57,13 +73,18 @@ def main() -> None:
         raise RuntimeError("pnpm is required to start the PaperTrans Tauri desktop client")
     if os.name == "nt":
         vsdevcmd = _windows_vsdevcmd()
+        msvc_linker = _windows_msvc_linker(vsdevcmd)
         cargo_bin = Path(os.environ.get("USERPROFILE", str(Path.home()))) / ".cargo" / "bin"
         command = (
             f'call "{vsdevcmd}" -arch=amd64 -host_arch=amd64 >nul '
             f'&& set "PATH={cargo_bin};%PATH%" '
+            f'&& set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER={msvc_linker}" '
             f'&& call "{pnpm}" desktop:dev'
         )
-        arguments = ["cmd.exe", "/d", "/s", "/c", command]
+        # cmd.exe does not follow the C runtime's argv quote escaping. Passing a list makes
+        # subprocess.list2cmdline() turn the embedded quotes into \" sequences, which cmd treats
+        # as literal path characters. Supply the command line verbatim instead.
+        arguments = f'cmd.exe /d /s /c "{command}"'
     else:
         arguments = [pnpm, "desktop:dev"]
     completed = subprocess.run(arguments, cwd=frontend, check=False)

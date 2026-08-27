@@ -13,6 +13,7 @@ node_modules/
 models/
 test_pdf/
 frontend_tamplate/
+frontend/src-tauri/binaries/*.exe
 tmp/
 .worktrees/
 *.log
