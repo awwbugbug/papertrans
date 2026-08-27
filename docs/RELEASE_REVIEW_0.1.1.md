@@ -38,8 +38,28 @@ retrieval in an isolated test directory, with no user documents or paid provider
 The rebuilt frozen sidecar passed this complete regression in 32.23 seconds. The test tolerates
 transient read-connection failures during cold model initialization only within its fixed 180-second
 job deadline, checks that the process remains alive, and still requires successful OCR, translation,
-quality validation, and PDF retrieval. It never resubmits the translation request. Final installer
-extraction and checksum verification remain the last packaging checks.
+quality validation, and PDF retrieval. It never resubmits the translation request. The same gate
+also passed in 38.78 seconds against the backend and models extracted from the final NSIS installer.
+
+### Final local artifact verification
+
+- Build source: `33a5915` (subsequent review updates are documentation-only).
+- Installer: `PaperTrans_0.1.1_x64-setup.exe`, 368,537,231 bytes (351.5 MiB).
+- Installer SHA256: `7301718DB3D208B859EA391B5F5B5A74A12A9DB81080A94A4DE7E7435BB3FB8F`.
+- `SHA256SUMS.txt` matches the final installer.
+- NSIS archive extraction succeeded. All six model files match the source files by SHA256.
+- Extracted backend matches the tested build byte-for-byte; SHA256:
+  `9A18C06CBB17612086F64B85F848BD9E94636D2E0A5B3FF26C66262DA3C1CD0F`.
+- Extracted desktop executable matches the build except for Tauri's documented-in-source
+  `__TAURI_BUNDLE_TYPE_VAR_UNK` to `__TAURI_BUNDLE_TYPE_VAR_NSS` bundle marker. Both executables
+  use the Windows GUI subsystem.
+- Authenticode status remains `NotSigned`.
+- Remote README, screenshots, packaging script, and regression test match local Git blobs;
+  both screenshot URLs returned HTTP 200.
+
+These checks exercise the extracted installed resources, not an interactive installation on a
+separate clean Windows machine. The installer has not been uploaded or published because the
+distribution-licensing decision remains unresolved.
 
 ### Source and documentation checks
 
