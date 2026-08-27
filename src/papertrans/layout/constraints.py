@@ -103,6 +103,7 @@ def validate_layout(
     layout: DocumentLayout,
     *,
     expected_flow_ids: Collection[str] | None = None,
+    min_font_scale: float = 0.72,
 ) -> LayoutSafetyReport:
     expected = set(expected_flow_ids) if expected_flow_ids is not None else {
         flow.id for flow in document.text_flows if flow.translatable
@@ -166,7 +167,7 @@ def validate_layout(
             (
                 flow.font_size < 6.0 and flow.font_size < flow.original_font_size
             )
-            or flow.font_size / max(0.001, flow.original_font_size) < 0.72
+            or flow.font_size / max(0.001, flow.original_font_size) < min_font_scale
             for flow in layout.flows
         ),
         region_binding_count=region_binding_count,

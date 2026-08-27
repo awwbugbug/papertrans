@@ -408,6 +408,7 @@ def run_translation_job(
         document,
         layout,
         expected_flow_ids=translations,
+        min_font_scale=layout.stats.get("minimum_font_scale_floor", 0.72),
     )
     gates = {
         "complete_layout_selection": (
@@ -421,7 +422,10 @@ def run_translation_job(
         ),
         "no_layout_overflow": layout_safety.overflow_flow_count == 0,
         "no_new_sub_6pt_text": layout.stats["new_sub_6pt_flow_count"] == 0,
-        "minimum_font_scale_at_least_0_72": layout.stats["minimum_font_scale"] >= 0.72,
+        "minimum_font_scale_within_bounds": (
+            layout.stats["minimum_font_scale"]
+            >= layout.stats.get("minimum_font_scale_floor", 0.72)
+        ),
         "no_translated_line_overlaps": layout_safety.translated_overlap_count == 0,
         "no_protected_region_overlaps": layout_safety.protected_overlap_count == 0,
         "protected_tokens_restored": translation_batch.stats["passed"],

@@ -458,7 +458,13 @@ def recover_page_structure(page: Page) -> None:
 def _classify_reference_section(document: Document) -> None:
     in_references = False
     for page in document.pages:
-        for region in page.regions:
+        ordered = sorted(
+            page.regions,
+            key=lambda region: region.reading_order
+            if region.reading_order is not None
+            else 1_000_000,
+        )
+        for region in ordered:
             text = _text(region).casefold()
             if text in {"references", "reference"} and region.type in {
                 RegionType.TITLE,
@@ -468,6 +474,13 @@ def _classify_reference_section(document: Document) -> None:
                 region.confidence = 0.95
                 region.metadata["structure_rule"] = "references_heading"
                 in_references = True
+                continue
+            if in_references and region.type in {RegionType.HEADING, RegionType.TITLE}:
+                # A new section heading after the reference list (e.g. an appendix such as
+                # "A. Object Detection Baselines") ends the references so its body stays
+                # translatable instead of being swallowed as reference entries.
+                in_references = False
+                region.metadata["structure_rule"] = "post_references_section"
                 continue
             if in_references and region.type in {RegionType.PARAGRAPH, RegionType.FOOTNOTE}:
                 region.type = RegionType.REFERENCE

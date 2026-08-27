@@ -187,8 +187,8 @@ def _layout_attempt(
     return placements, remaining, blocked_line_slots
 
 
-def _size_steps(original_size: float) -> list[float]:
-    minimum = max(6.0, original_size * 0.72)
+def _size_steps(original_size: float, min_scale: float = 0.72) -> list[float]:
+    minimum = max(6.0, original_size * min_scale)
     steps: list[float] = []
     size = original_size - 0.5
     while size >= minimum:
@@ -239,6 +239,9 @@ def build_cjk_layout(
     word_segmented: bool = False,
 ) -> DocumentLayout:
     resolver = font_resolver or CJKFontResolver()
+    # Space-delimited scripts (Latin, Cyrillic, Korean) expand relative to compact CJK
+    # text, so allow a lower font-size floor for them; CJK targets keep the tighter 0.72.
+    min_font_scale = 0.60 if word_segmented else 0.72
     region_by_id = {region.id: region for page in document.pages for region in page.regions}
     page_by_region = {region.id: page.number for page in document.pages for region in page.regions}
     layouts: list[FlowLayout] = []
@@ -257,7 +260,7 @@ def build_cjk_layout(
         ]
         if translation.compact:
             attempts.append(("compact", translation.compact, original_size))
-        for size in _size_steps(original_size):
+        for size in _size_steps(original_size, min_font_scale):
             attempts.append(("normal", translation.normal, size))
             if translation.compact:
                 attempts.append(("compact", translation.compact, size))
@@ -310,6 +313,7 @@ def build_cjk_layout(
             flow.font_size < flow.original_font_size for flow in layouts
         ),
         "minimum_font_size": round(min((flow.font_size for flow in layouts), default=0.0), 3),
+        "minimum_font_scale_floor": min_font_scale,
         "minimum_font_scale": round(
             min(
                 (flow.font_size / max(0.001, flow.original_font_size) for flow in layouts),

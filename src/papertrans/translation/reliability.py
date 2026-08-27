@@ -127,10 +127,12 @@ class ProviderError(RuntimeError):
         error_type: str,
         http_status: int | None = None,
         usage: TranslationUsage | None = None,
+        detail: str | None = None,
     ) -> None:
         self.error_type = _normalize_error_type(error_type)
         self.http_status = http_status
         self.usage = usage
+        self.detail = detail
         super().__init__(self.error_type)
 
 
@@ -150,10 +152,13 @@ class ProviderExecutionError(RuntimeError):
             getattr(cause, "error_type", type(cause).__name__)
         )
         self.http_status = getattr(cause, "http_status", None)
+        self.detail = getattr(cause, "detail", None)
         self.cause_type = self.error_type
+        status = f" (HTTP {self.http_status})" if self.http_status else ""
+        detail = f": {self.detail}" if self.detail else ""
         super().__init__(
             f"Translation provider failed for segment {segment_id} after {attempts} "
-            f"attempt(s): {self.error_type}"
+            f"attempt(s): {self.error_type}{status}{detail}"
         )
 
 

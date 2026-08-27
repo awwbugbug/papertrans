@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from types import TracebackType
 from typing import Any
@@ -82,7 +83,7 @@ class ChatCompletionsTranslationProvider:
             raise RetryableProviderError(error_type="network_error") from None
 
         if not 200 <= response.status_code < 300:
-            error = _http_error(response.status_code)
+            error = _http_error(response.status_code, _error_detail(response))
             raise error from None
 
         try:
@@ -166,20 +167,53 @@ def _plain_mapping(mapping: Mapping[str, object]) -> dict[str, object]:
     }
 
 
-def _http_error(status: int) -> RetryableProviderError | NonRetryableProviderError:
+_SECRET_DETAIL = re.compile(r"(sk-[a-z0-9_-]{6,}|Bearer\s+\S+)", re.IGNORECASE)
+
+
+def _error_detail(response: httpx.Response) -> str | None:
+    """Extract a short, secret-free human message from a provider error response."""
+    message: str | None = None
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict):
+                candidate = error.get("message") or error.get("code")
+                message = str(candidate) if candidate is not None else None
+            elif isinstance(error, str):
+                message = error
+            if message is None:
+                candidate = payload.get("message")
+                message = str(candidate) if candidate is not None else None
+    except (json.JSONDecodeError, ValueError):
+        message = None
+    if not message:
+        message = (response.text or "").strip() or None
+    if not message:
+        return None
+    message = _SECRET_DETAIL.sub("[REDACTED]", message).strip()
+    return message[:200]
+
+
+def _http_error(
+    status: int, detail: str | None = None
+) -> RetryableProviderError | NonRetryableProviderError:
     if status in _PERMANENT_HTTP_STATUSES:
         return NonRetryableProviderError(
             error_type="provider_http_error",
             http_status=status,
+            detail=detail,
         )
     if status in {408, 429} or 500 <= status < 600:
         return RetryableProviderError(
             error_type="provider_http_error",
             http_status=status,
+            detail=detail,
         )
     return NonRetryableProviderError(
         error_type="provider_http_error",
         http_status=status,
+        detail=detail,
     )
 
 
