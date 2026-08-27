@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📄 PaperTrans
+<h1><img src="frontend/src-tauri/icons/icon.png" alt="PaperTrans" width="56" height="56" valign="middle"> PaperTrans</h1>
 
 ### 保版式的学术论文 PDF 翻译工具
 
