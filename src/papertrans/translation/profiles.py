@@ -41,6 +41,19 @@ class ProviderProfile:
     api_key_env: str
     thinking_mode: str
     pricing: ProviderPricing | None = None
+    # Additional base URLs to fall back to when the primary one rejects the key with a
+    # plan/quota mismatch (HTTP 429). Lets one key work whether it is a subscription
+    # (e.g. Zhipu Coding Plan) or pay-as-you-go without the user choosing an endpoint.
+    alternate_base_urls: tuple[str, ...] = ()
+
+    @property
+    def base_url_candidates(self) -> tuple[str, ...]:
+        seen: list[str] = []
+        for candidate in (self.base_url, *self.alternate_base_urls):
+            normalized = candidate.rstrip("/")
+            if normalized not in seen:
+                seen.append(normalized)
+        return tuple(seen)
 
     @property
     def chat_url(self) -> str:
@@ -83,10 +96,17 @@ KIMI_PROFILE = ProviderProfile(
 
 ZHIPU_PROFILE = ProviderProfile(
     provider="zhipu",
-    base_url="https://open.bigmodel.cn/api/paas/v4",
+    # GLM Coding Plan endpoint; it serves the same models and also works for pay-as-you-go
+    # keys, whereas the plain /api/paas/v4 endpoint rejects coding-plan keys with HTTP 429.
+    base_url="https://open.bigmodel.cn/api/coding/paas/v4",
+    # Fall back to the pay-as-you-go endpoint automatically when a key is not on the
+    # Coding Plan (and vice versa), so users never have to pick the right endpoint.
+    alternate_base_urls=("https://open.bigmodel.cn/api/paas/v4",),
     default_model="glm-4.6",
     api_key_env="ZHIPUAI_API_KEY",
-    thinking_mode="provider_default",
+    # GLM reasoning models (glm-4.5+, glm-5.x) otherwise spend the output budget on
+    # chain-of-thought and truncate the translation (finish_reason=length). Disable it.
+    thinking_mode="disabled",
 )
 
 

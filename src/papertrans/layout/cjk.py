@@ -239,9 +239,11 @@ def build_cjk_layout(
     word_segmented: bool = False,
 ) -> DocumentLayout:
     resolver = font_resolver or CJKFontResolver()
-    # Space-delimited scripts (Latin, Cyrillic, Korean) expand relative to compact CJK
-    # text, so allow a lower font-size floor for them; CJK targets keep the tighter 0.72.
-    min_font_scale = 0.60 if word_segmented else 0.72
+    # Translations expand relative to compact CJK source layout, so the strict 0.72 floor
+    # frequently leaves a single caption/paragraph unable to fit and rejects the whole PDF.
+    # Give space-delimited scripts (Latin/Cyrillic/Korean) the most room; keep CJK a little
+    # tighter but still below 0.72 so an occasional long line does not fail the whole document.
+    min_font_scale = 0.60 if word_segmented else 0.65
     region_by_id = {region.id: region for page in document.pages for region in page.regions}
     page_by_region = {region.id: page.number for page in document.pages for region in page.regions}
     layouts: list[FlowLayout] = []

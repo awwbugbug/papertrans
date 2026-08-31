@@ -42,6 +42,8 @@ class ChatCompletionsTranslationProvider:
         self.max_output_tokens = max_output_tokens
         self.cache_identity = profile.cache_identity(model)
         self._api_key = api_key
+        self._base_urls = list(profile.base_url_candidates)
+        self._active_base_index = 0
         self._owns_http_client = http_client is None
         self._http_client = http_client if http_client is not None else httpx.Client()
 
@@ -63,6 +65,26 @@ class ChatCompletionsTranslationProvider:
     def translate(self, requests: list[TranslationRequest]) -> list[TranslationResult]:
         return [self._translate_one(request) for request in requests]
 
+    def _post_with_endpoint_fallback(self, payload: dict[str, object]) -> httpx.Response:
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        response: httpx.Response | None = None
+        for index in range(self._active_base_index, len(self._base_urls)):
+            chat_url = f"{self._base_urls[index]}/chat/completions"
+            try:
+                response = self._http_client.post(
+                    chat_url, headers=headers, json=payload, timeout=self.timeout_seconds
+                )
+            except (httpx.TimeoutException, httpx.RequestError):
+                raise RetryableProviderError(error_type="network_error") from None
+            # A 429 on a named provider usually means the key belongs to a different plan
+            # (Coding Plan vs pay-as-you-go); try the next candidate endpoint before failing.
+            if response.status_code == 429 and index + 1 < len(self._base_urls):
+                continue
+            self._active_base_index = index
+            break
+        assert response is not None
+        return response
+
     def _translate_one(self, request: TranslationRequest) -> TranslationResult:
         payload: dict[str, object] = {
             "model": self.model,
@@ -72,15 +94,7 @@ class ChatCompletionsTranslationProvider:
             "max_tokens": self.max_output_tokens,
         }
         payload.update(_plain_mapping(self.profile.request_overrides))
-        try:
-            response = self._http_client.post(
-                self.profile.chat_url,
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                json=payload,
-                timeout=self.timeout_seconds,
-            )
-        except (httpx.TimeoutException, httpx.RequestError):
-            raise RetryableProviderError(error_type="network_error") from None
+        response = self._post_with_endpoint_fallback(payload)
 
         if not 200 <= response.status_code < 300:
             error = _http_error(response.status_code, _error_detail(response))
@@ -130,22 +144,22 @@ class ChatCompletionsTranslationProvider:
                 error_type="invalid_translation_fields",
                 usage=usage,
             )
-        normal = translation.get("normal")
-        compact = translation.get("compact")
-        if not isinstance(normal, str) or not isinstance(compact, str):
+        normal, compact = _translation_fields(translation)
+        if not isinstance(normal, str):
             raise RetryableProviderError(
                 error_type="invalid_translation_fields",
                 usage=usage,
             )
-        if not normal.strip() or not compact.strip():
+        if not normal.strip():
             raise RetryableProviderError(
                 error_type="empty_translation_fields",
                 usage=usage,
             )
+        compact = compact if isinstance(compact, str) and compact.strip() else None
+        candidates = [normal] + ([compact] if compact is not None else [])
         if any(
-            placeholder_issues(candidate, request.protected_tokens)
-            != ((), (), ())
-            for candidate in (normal, compact)
+            placeholder_issues(candidate, request.protected_tokens) != ((), (), ())
+            for candidate in candidates
         ):
             raise RetryableProviderError(
                 error_type="placeholder_validation_error",
@@ -165,6 +179,42 @@ def _plain_mapping(mapping: Mapping[str, object]) -> dict[str, object]:
         key: _plain_mapping(value) if isinstance(value, Mapping) else value
         for key, value in mapping.items()
     }
+
+
+_ALT_TRANSLATION_KEYS = ("answer", "translation", "text", "result", "output")
+
+
+def _maybe_json_object(value: str) -> object:
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def _translation_fields(translation: dict[str, Any]) -> tuple[object, object]:
+    """Extract (normal, compact) tolerating minor schema drift from less strict models.
+
+    A well-formed response is {"normal": ..., "compact": ...}. When the "normal" key is
+    absent, some models answer under an alternative key (e.g. "answer") or double-encode the
+    JSON object as a string; recover those instead of failing the whole segment. When "normal"
+    is present it is validated strictly by the caller.
+    """
+    if "normal" in translation:
+        return translation.get("normal"), translation.get("compact")
+    for key in _ALT_TRANSLATION_KEYS:
+        if key in translation:
+            value = translation[key]
+            if isinstance(value, dict) and isinstance(value.get("normal"), str):
+                return value["normal"], value.get("compact")
+            if isinstance(value, str):
+                nested = _maybe_json_object(value)
+                if isinstance(nested, dict) and isinstance(nested.get("normal"), str):
+                    return nested["normal"], nested.get("compact")
+                return value, None
+    string_values = [value for value in translation.values() if isinstance(value, str)]
+    if len(string_values) == 1:
+        return string_values[0], None
+    return None, None
 
 
 _SECRET_DETAIL = re.compile(r"(sk-[a-z0-9_-]{6,}|Bearer\s+\S+)", re.IGNORECASE)

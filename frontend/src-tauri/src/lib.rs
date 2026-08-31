@@ -207,16 +207,20 @@ pub fn run() {
             let port = available_port()?;
             let token = uuid::Uuid::new_v4().simple().to_string();
             let child = spawn_backend(app.handle(), port, &token)?;
-            if let Err(error) = wait_for_backend(port, Duration::from_secs(12)) {
-                child.stop();
-                return Err(error);
-            }
+            // The session address and token are known immediately; publish them now so the
+            // window can paint and the frontend can start polling. The local FastAPI sidecar
+            // (bundled as a self-extracting one-file binary) may take several seconds to begin
+            // listening, so wait for readiness on a background thread instead of blocking the
+            // main thread — otherwise the webview stays black until the backend is up.
             app.manage(DesktopSession {
                 api_base: format!("http://127.0.0.1:{port}"),
                 session_token: token,
             });
             app.manage(BackendProcess(Mutex::new(Some(child))));
             app.manage(CloseBehavior(Mutex::new(false)));
+            std::thread::spawn(move || {
+                let _ = wait_for_backend(port, Duration::from_secs(60));
+            });
 
             let show_item =
                 MenuItem::with_id(app, "tray-show", "显示 PaperTrans", true, None::<&str>)?;

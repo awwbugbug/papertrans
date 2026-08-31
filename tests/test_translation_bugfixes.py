@@ -95,8 +95,11 @@ def test_word_segmented_layout_uses_lower_font_floor():
     )
     latin = build_cjk_layout(document, {translation.segment_id: translation}, word_segmented=True)
     cjk = build_cjk_layout(document, {translation.segment_id: translation}, word_segmented=False)
+    # Space-delimited scripts get the most room; CJK stays a little tighter but still below
+    # the old 0.72 so a single long line does not fail the whole document.
     assert latin.stats["minimum_font_scale_floor"] == 0.60
-    assert cjk.stats["minimum_font_scale_floor"] == 0.72
+    assert cjk.stats["minimum_font_scale_floor"] == 0.65
+    assert latin.stats["minimum_font_scale_floor"] < cjk.stats["minimum_font_scale_floor"] < 0.72
 
 
 def test_provider_http_error_detail_surfaces_message():
@@ -111,6 +114,42 @@ def test_provider_http_error_detail_surfaces_message():
     execution_error = ProviderExecutionError("s0", 1, error)
     assert "余额不足" in str(execution_error)
     assert "HTTP 429" in str(execution_error)
+
+
+def test_named_provider_falls_back_to_alternate_endpoint_on_plan_mismatch():
+    # A key on a different plan (e.g. Zhipu Coding Plan vs pay-as-you-go) makes the primary
+    # endpoint answer 429; the provider must transparently try the alternate endpoint.
+    from papertrans.translation.base import TranslationRequest
+    from papertrans.translation.registry import create_translation_provider
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if "coding" in str(request.url):
+            return httpx.Response(429, json={"error": {"message": "余额不足或无可用资源包"}})
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": '{"normal":"\\u8a33","compact":"\\u8a33"}'},
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    provider = create_translation_provider(
+        "zhipu", environ={"ZHIPUAI_API_KEY": "test-key"}, http_client=client
+    )
+    result = provider.translate(
+        [TranslationRequest(segment_id="s0", text="hi", target_language="ja")]
+    )
+    assert result[0].normal == "訳"
+    assert any("coding" in url for url in seen)
+    assert any(url.endswith("/api/paas/v4/chat/completions") for url in seen)
 
 
 def test_error_detail_redacts_secret_like_content():

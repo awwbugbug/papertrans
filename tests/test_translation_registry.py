@@ -53,7 +53,7 @@ def test_registry_creates_zhipu_from_expected_environment() -> None:
 
     assert isinstance(zhipu, ZhipuTranslationProvider)
     assert zhipu.cache_identity["model"] == "glm-4.6"
-    assert zhipu.cache_identity["base_url"] == "https://open.bigmodel.cn/api/paas/v4"
+    assert zhipu.cache_identity["base_url"] == "https://open.bigmodel.cn/api/coding/paas/v4"
     assert "sentinel" not in str(zhipu.cache_identity)
 
 

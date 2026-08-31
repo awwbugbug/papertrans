@@ -38,7 +38,7 @@ def test_kimi_uses_versioned_base_url() -> None:
 
 def test_zhipu_uses_bigmodel_base_url() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert str(request.url) == "https://open.bigmodel.cn/api/paas/v4/models"
+        assert str(request.url) == "https://open.bigmodel.cn/api/coding/paas/v4/models"
         return httpx.Response(200, json={"data": [{"id": "glm-4.6"}, {"id": "glm-4-flash"}]})
 
     models = list_provider_models("zhipu", "sk", http_client=_client(handler))

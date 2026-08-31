@@ -1,12 +1,47 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Prototype</title>
+    <title>PaperTrans</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #faf9fe; }
+      #app-splash {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #faf9fe;
+        color: #1f108e;
+        font-family: "Geist", "Inter", "Microsoft YaHei", system-ui, sans-serif;
+      }
+      #app-splash .brand { font-size: 26px; font-weight: 700; letter-spacing: -0.025em; }
+      #app-splash .spinner {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 3px solid rgba(31, 16, 142, 0.18);
+        border-top-color: #1f108e;
+        animation: pt-spin 0.8s linear infinite;
+      }
+      @keyframes pt-spin { to { transform: rotate(360deg); } }
+      @media (prefers-color-scheme: dark) {
+        html, body, #app-splash { background: #14131a; }
+        #app-splash { color: #b9b3ff; }
+        #app-splash .spinner { border-color: rgba(185, 179, 255, 0.2); border-top-color: #b9b3ff; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <div id="root">
+      <div id="app-splash">
+        <div class="brand">PaperTrans</div>
+        <div class="spinner" aria-hidden="true"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

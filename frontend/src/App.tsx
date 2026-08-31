@@ -78,6 +78,22 @@ function providerIsConfigured(provider: ProviderDescriptor, config: ProviderSess
   }
 }
 
+async function loadSystemInfoWhenReady(): Promise<SystemInfo> {
+  // The local backend can take a few seconds to start listening (the bundled sidecar
+  // self-extracts on first launch), so poll instead of failing the initial load.
+  const deadline = Date.now() + 60_000;
+  let delay = 200;
+  for (;;) {
+    try {
+      return await loadSystemInfo();
+    } catch (error) {
+      if (Date.now() >= deadline) throw error;
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+      delay = Math.min(Math.round(delay * 1.5), 1500);
+    }
+  }
+}
+
 function modelDetectDisabledReason(provider: ProviderName, apiKey: string, baseUrl: string): string {
   if (provider === "mock") return "Mock 无需选择模型";
   if (!apiKey.trim()) return "请先填写 API Key 再检测";
@@ -1387,7 +1403,7 @@ export function App() {
             })
             .catch(() => setProviderConfigError("无法读取 Windows 凭据管理器中的翻译服务配置"));
         }
-        return loadSystemInfo();
+        return loadSystemInfoWhenReady();
       })
       .then((info) => {
         setSystem(info);
